@@ -1,0 +1,22 @@
+{
+	"lint": {
+		"rules": {
+			"exclude": [
+				"no-explicit-any"
+			]
+		}
+	},
+	"tasks": {
+		"install": "deno install -n rig -gfA src/main.ts",
+		"dev": "deno test -A --parallel --watch",
+		"test": "deno test -A --parallel --coverage=out/coverage"
+	},
+	"imports": {
+		"@david/dax": "jsr:@david/dax@^0.45.0",
+		"@std/crypto": "jsr:@std/crypto@^1.0.5",
+		"@std/encoding": "jsr:@std/encoding@^1.0.10",
+		"@std/fs": "jsr:@std/fs@^1.0.22",
+		"@std/path": "jsr:@std/path@^1.1.4",
+		"@std/yaml": "jsr:@std/yaml@^1.0.11"
+	}
+}

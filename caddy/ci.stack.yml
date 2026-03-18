@@ -1,0 +1,10 @@
+services:
+  caddy:
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    deploy:
+      placement:
+        constraints:
+          - node.labels.index == 0

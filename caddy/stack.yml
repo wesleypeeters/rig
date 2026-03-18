@@ -1,0 +1,26 @@
+x-stack:
+  name: caddy
+
+services:
+  caddy:
+    build: ""
+    cap_add:
+      - NET_ADMIN
+    extra_hosts:
+      - "host:host-gateway"
+    volumes:
+      - data:/data
+      - config:/config
+      - webroot:/srv
+    command: ["caddy", "run", "--resume"]
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+
+volumes:
+  data:
+  config:
+  webroot:

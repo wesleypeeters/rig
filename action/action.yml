@@ -1,0 +1,44 @@
+name: 'Rig Deploy'
+description: 'Docker Swarm deployment orchestrator with dynamic Caddy routing'
+inputs:
+  command:
+    description: 'Command to run: build, deploy, rm, cleanup'
+    required: true
+  cluster:
+    description: 'Target cluster'
+    required: false
+    default: 'local'
+  push:
+    description: 'Push images after building'
+    required: false
+    default: 'false'
+  max-age:
+    description: 'Max review env age for cleanup'
+    required: false
+    default: '48h'
+  await:
+    description: 'Wait for convergence'
+    required: false
+    default: 'true'
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup
+      shell: bash
+      run: ${{ github.action_path }}/scripts/setup.sh
+      env:
+        CLUSTER: ${{ inputs.cluster }}
+        CLUSTER_SSH_KEY: ${{ env.CLUSTER_SSH_KEY }}
+        CLUSTER_HOST: ${{ env.CLUSTER_HOST }}
+        GHCR_TOKEN: ${{ env.GHCR_TOKEN }}
+    - name: Execute
+      shell: bash
+      run: ${{ github.action_path }}/scripts/${{ inputs.command }}.sh
+      env:
+        CLUSTER: ${{ inputs.cluster }}
+        PUSH: ${{ inputs.push }}
+        MAX_AGE: ${{ inputs.max-age }}
+        AWAIT: ${{ inputs.await }}
+        REVIEW_ID: ${{ github.event.number }}
+        CLUSTER_HOST: ${{ env.CLUSTER_HOST }}
+        CLUSTER_SSH_USER: ${{ env.CLUSTER_SSH_USER }}

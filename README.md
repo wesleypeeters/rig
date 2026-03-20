@@ -22,13 +22,13 @@ deno install -n rig -gfA src/main.ts
 
 ```yaml
 # stack.yml
-x-stack:
+x-rig:
   name: hello
   routes:
-    hello.localhost: 3000
+    hello: 80
 
 services:
-  api:
+  web:
     image: nginx
 ```
 
@@ -37,7 +37,7 @@ services:
 cd caddy && rig build && rig deploy && rig caddy init && rig caddy trust && cd ..
 
 # Deploy your stack
-rig deploy
+rig build && rig deploy
 # -> https://hello.localhost
 ```
 

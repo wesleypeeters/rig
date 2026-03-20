@@ -20,7 +20,7 @@ import { encodeBase58 } from "@std/encoding/base58";
 import { createCaddyStackConfig } from "../caddy/routes.ts";
 import { portRangeLength, getRangeFirstPort, findNextPortRangeId } from "../stack/ports.ts";
 
-const { routes } = stack["x-stack"];
+const { routes } = stack["x-rig"];
 
 function lockImages(services: Stack["services"], lock: Record<string, string>) {
 	for (const serviceName in services) {

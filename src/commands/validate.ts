@@ -8,7 +8,7 @@ import { ciMode } from "../constants.ts";
 const hostnameRegex = /^(?!-)[a-z\d-]{1,63}(?<!-)(\.(?!-)[a-z\d-]{1,63}(?<!-))*$/;
 const validAccess = new Set(["internal", "local", "private", "public"]);
 
-function validate({ services, ["x-stack"]: { routes } }: StackYml) {
+function validate({ services, ["x-rig"]: { routes } }: StackYml) {
 	validateRoutes(routes);
 	if (!ciMode || isClusterAdmin()) return;
 	for (const name in services) {

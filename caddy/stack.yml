@@ -1,4 +1,4 @@
-x-stack:
+x-rig:
   name: caddy
 
 services:

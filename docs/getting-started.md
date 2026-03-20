@@ -39,10 +39,10 @@ After this, `https://localhost` should show "rig is running".
 Create a `stack.yml` in your project:
 
 ```yaml
-x-stack:
+x-rig:
   name: myapp
   routes:
-    myapp.localhost: 3000
+    myapp: 3000
 
 services:
   api:
@@ -52,7 +52,7 @@ services:
       PORT: 3000
 ```
 
-The `x-stack` block is the only thing specific to rig. Everything else is standard Docker Compose / Swarm syntax.
+The `x-rig` block is the only thing specific to rig. Everything else is standard Swarm stack syntax. Route keys are hostnames without the cluster TLD -- locally, `myapp` becomes `myapp.localhost`.
 
 ## Deploy
 

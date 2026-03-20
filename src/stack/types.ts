@@ -9,7 +9,7 @@ export type StackExtension = {
 	routes: Routes;
 };
 
-export type StackYml = Stack & { "x-stack": StackExtension };
+export type StackYml = Stack & { "x-rig": StackExtension };
 
 export type Port = {
 	mode?: string;

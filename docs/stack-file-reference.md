@@ -29,12 +29,12 @@ Override files exist because YAML anchors are shallow copies. When you clone wit
 
 **If you don't use YAML anchors, you probably don't need override files.**
 
-## x-stack extension
+## x-rig extension
 
-Every stack must define an `x-stack` block in `stack.yml`:
+Every stack must define an `x-rig` block in `stack.yml`:
 
 ```yaml
-x-stack:
+x-rig:
   name: my-app
   routes:
     api.example.com: 3000

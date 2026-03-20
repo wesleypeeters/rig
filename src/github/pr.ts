@@ -18,10 +18,9 @@ if (GITHUB_ACTIONS) {
 		?? (GITHUB_REF?.match(/^refs\/pull\/(\d+)\/merge$/)?.[1] ? Number(RegExp.$1) : null)
 		?? (event.inputs?.pr_number ? Number(event.inputs.pr_number) : null);
 } else {
-	[_defaultBranch, _currentBranch] = await Promise.all([
-		$`git symbolic-ref refs/remotes/origin/HEAD`.text().then(ref => ref.replace(/^.*\//, "")),
-		$`git rev-parse --abbrev-ref HEAD`.text()
-	]);
+	_currentBranch = await $`git rev-parse --abbrev-ref HEAD`.text();
+	_defaultBranch = await $`git symbolic-ref refs/remotes/origin/HEAD`.noThrow().stderr("null").text()
+		.then(ref => ref.trim() ? ref.replace(/^.*\//, "") : "main");
 }
 
 export const defaultBranch = _defaultBranch;

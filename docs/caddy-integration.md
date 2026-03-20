@@ -125,6 +125,29 @@ The `caddy/Dockerfile` builds Caddy with two plugins:
 
 It also includes `curl` for the admin API client.
 
+## How TLD stripping works
+
+This is important to understand because it affects how route host matchers work.
+
+When a request for `https://myapp.r42.dev.example.com` arrives:
+
+1. The global vars handler captures the original host: `myapp.r42.dev.example.com`
+2. The strip handler removes the cluster TLD, so the Host header becomes: `myapp.r42`
+3. Per-stack subroutes match against the **stripped** host
+4. The reverse proxy restores the original host from the captured variable before forwarding
+
+This means route keys in `x-rig` should be base hostnames without the TLD. When you write `routes: { myapp: 80 }`, the matcher looks for `myapp` (after stripping). For review environments it looks for `myapp.r42`.
+
+The strip regex is configured during `rig caddy init <tld>`:
+
+| TLD | Strip pattern | `myapp.r42.dev.example.com` becomes |
+|-----|--------------|--------------------------------------|
+| `.localhost` | `\.localhost$` | `myapp.r42` |
+| `.dev.example.com` | `\.[^.]+\.dev\.example\.com$` | `myapp` |
+| `.*host` pattern | `\.\w*host$` | `myapp.r42` |
+
+If you change the cluster TLD, re-run `rig caddy init` with the new value.
+
 ## Troubleshooting
 
 **"Certificate not trusted"**
@@ -140,7 +163,22 @@ It also includes `curl` for the admin API client.
 - Verify the stack has routes in Caddy: `docker exec <caddy-id> curl -s http://127.0.0.1:2019/id/<stack-name>`
 - If missing, redeploy: `rig deploy`
 
+**Route matches wrong service or returns empty response**
+- Check that your route key in `x-rig` doesn't include the TLD. It should be `myapp`, not `myapp.localhost`.
+- After stripping, the Host header must match the route key. See [how TLD stripping works](#how-tld-stripping-works).
+
 **Inspect live Caddy config**
+
 ```sh
+# Get everything
 docker exec <caddy-id> curl -s http://127.0.0.1:2019/config/ | jq
+
+# Get a specific stack's routes
+docker exec <caddy-id> curl -s http://127.0.0.1:2019/id/<stack-name> | jq
+
+# Get all port range allocations
+docker exec <caddy-id> curl -s http://127.0.0.1:2019/id/@vars/portRanges | jq
+
+# Check what the strip handler is doing
+docker exec <caddy-id> curl -s http://127.0.0.1:2019/id/@stacks/routes/0/handle/1 | jq
 ```

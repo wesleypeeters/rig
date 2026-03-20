@@ -1,12 +1,23 @@
 # Review environments
 
-Every pull request gets its own deployment. Hostnames are suffixed with the PR number so multiple PRs can run simultaneously. When the PR closes, the environment is cleaned up.
+Every pull request gets its own deployment on the cluster. The stack gets deployed with a PR-specific name and routes get a `.r{number}` suffix so multiple PRs can run simultaneously without conflicts. When the PR closes, the environment is automatically cleaned up.
 
 ## How it works
 
-- PR opens: build images, deploy as `{name}_r{pr_number}`, Caddy routes `api.example.com.r42.dev.example.com`
-- PR updates: rebuild, redeploy
-- PR closes: `rig rm` removes the stack and its routes
+When working on a PR the CLI automatically switches to the review context for that PR. If the stack `name` in `stack.yml` is `my-app` and the PR number is `42`:
+
+- The stack gets deployed as `my-app_r42`
+- Route hostnames get a `.r42` label: `https://myapp.r42.dev.example.com`
+- Locally: `https://myapp.r42.localhost`
+
+The lifecycle:
+
+- **PR opens/updates**: build images, push to GHCR, deploy as `{name}_r{pr_number}`, configure Caddy routes
+- **PR closes/merges**: `rig rm` removes the stack, Caddy routes, and port range registration
+
+> [!important]
+>
+> Review environments should only be deployed to a dev/staging cluster, not production.
 
 ## GitHub Actions workflow
 

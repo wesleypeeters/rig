@@ -10,11 +10,11 @@ function trimTrailingEmptyArgs(args: unknown[]) {
 	args.length = i;
 }
 
-export default function <T extends Fn, K>(
+export default function <T extends Fn>(
 	fn: T,
-	serializeArgs: (args: Parameters<T>) => K = defaultSerializer,
+	serializeArgs: (args: Parameters<T>) => any = defaultSerializer,
 ): T {
-	const cache = new Map<K, ReturnType<T>>();
+	const cache = new Map<any, ReturnType<T>>();
 	return ((...args: Parameters<T>): ReturnType<T> => {
 		trimTrailingEmptyArgs(args);
 		const key = serializeArgs(args);

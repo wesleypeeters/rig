@@ -1,5 +1,4 @@
 import memoize from "../util/memoize.ts";
-import { optional } from "../util/env.ts";
 
 function getImageDetails(imageId: string) {
 	const [firstSegment, ...rest] = imageId.split("/");

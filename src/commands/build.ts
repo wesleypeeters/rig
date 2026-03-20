@@ -15,10 +15,11 @@ const { services } = stack;
 gitIgnore(outDir);
 
 const fileList = interleave(ymlFiles, "-f");
-const [{ target }] = await Promise.all([
+const [bakeOutput] = await Promise.all([
 	$`docker buildx bake --progress quiet --print ${fileList}`.json(),
 	Deno.mkdir(outDir, { recursive: true })
-]) as [{ target: Record<string, unknown> }];
+]);
+const { target } = bakeOutput as { target: Record<string, unknown> };
 
 let metadata: Record<string, {
 	"containerimage.digest": string;

@@ -13,13 +13,12 @@ import processFiles from "../stack/processFiles.ts";
 import { exists } from "@std/fs/exists";
 import lockFilePath from "../stack/lockfile.ts";
 import stack from "../stack/parsed.ts";
-import name from "../stack/name.ts";
+import "../stack/name.ts";
 import id from "../stack/id.ts";
-import { optional } from "../util/env.ts";
 import type { Stack } from "../stack/types.ts";
 import { encodeBase58 } from "@std/encoding/base58";
 import { createCaddyStackConfig } from "../caddy/routes.ts";
-import { portRangeLength, firstPort, getRangeFirstPort, findNextPortRangeId } from "../stack/ports.ts";
+import { portRangeLength, getRangeFirstPort, findNextPortRangeId } from "../stack/ports.ts";
 
 const { routes } = stack["x-stack"];
 

@@ -1,5 +1,5 @@
 import caddyFetch from "./fetch.ts";
-import { defaultOnDemandInternalSubjects, generateSubjectWildcards } from "./tls.ts";
+import { defaultOnDemandInternalSubjects } from "./tls.ts";
 import fatalError from "../util/fatal.ts";
 import info from "../util/info.ts";
 

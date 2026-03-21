@@ -132,5 +132,5 @@ const config = {
 };
 
 const response = await caddyFetch("post", "load", JSON.stringify(config));
-response.ok || fatalError(response.json().error);
+response.ok || fatalError(JSON.parse(response.body).error);
 info(`Caddy initialized with TLD ${clusterTld}`);

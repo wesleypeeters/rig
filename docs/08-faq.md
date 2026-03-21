@@ -10,14 +10,14 @@ Before deploying, `rig build` resolves the digests for all images referenced by 
 <details>
 <summary>What's a review environment?</summary>
 
-A review environment is a temporary deployment on the cluster where progress on a PR can be reviewed. Each PR gets its own: if your stack is named `my-app` and the PR number is `42`, it gets deployed as `my-app_r42`. Routes get a `.r42` suffix, e.g. `https://myapp.r42.dev.example.com`. By default review environments are removed when the PR closes. See [review environments](review-environments.md) for the full setup.
+A review environment is a temporary deployment on the cluster where progress on a PR can be reviewed. Each PR gets its own: if your stack is named `my-app` and the PR number is `42`, it gets deployed as `my-app_r42`. Routes get a `.r42` suffix, e.g. `https://myapp.r42.dev.example.com`. By default review environments are removed when the PR closes. See [review environments](03-review-environments.md) for the full setup.
 
 </details>
 
 <details>
 <summary>How do I expose a service to the public?</summary>
 
-Only services deployed to a cluster with public DNS should be made public. Add a route in `stack.yml` that uses a public hostname with `access: public`. Make sure the hostname's DNS points to the cluster. See [defining stacks](defining-stacks.md#exposing-services).
+Only services deployed to a cluster with public DNS should be made public. Add a route in `stack.yml` that uses a public hostname with `access: public`. Make sure the hostname's DNS points to the cluster. See [defining stacks](02-defining-stacks.md#exposing-services).
 
 </details>
 
@@ -38,7 +38,7 @@ You can also re-run a previous GitHub Actions workflow run from the Actions tab.
 <details>
 <summary>How do I force-restart a service?</summary>
 
-Redeploying only restarts services whose definition changed. To force a restart, add `TIMESTAMP:` to the service's environment. See [advanced topics](advanced-topics.md#force-restart-when-deploying).
+Redeploying only restarts services whose definition changed. To force a restart, add `TIMESTAMP:` to the service's environment. See [advanced topics](06-advanced-topics.md#force-restart-when-deploying).
 
 </details>
 
@@ -63,20 +63,20 @@ CI=true rig validate
 <details>
 <summary>What about storing data on the cluster?</summary>
 
-Container filesystems are ephemeral. For persistent data, use volume mounts and pin the service to a specific node with placement constraints. Without this you'll get split-brain when the service moves to a different node. See [advanced topics](advanced-topics.md#storing-data-on-the-cluster).
+Container filesystems are ephemeral. For persistent data, use volume mounts and pin the service to a specific node with placement constraints. Without this you'll get split-brain when the service moves to a different node. See [advanced topics](06-advanced-topics.md#storing-data-on-the-cluster).
 
 </details>
 
 <details>
 <summary>What if I want to rename my stack?</summary>
 
-You'll need to remove the old stack, rename it, and redeploy. Any data in volumes will need to be backed up and restored. See [advanced topics](advanced-topics.md#renaming-a-stack).
+You'll need to remove the old stack, rename it, and redeploy. Any data in volumes will need to be backed up and restored. See [advanced topics](06-advanced-topics.md#renaming-a-stack).
 
 </details>
 
 <details>
 <summary>Can I run short-lived jobs on Swarm?</summary>
 
-Yes, with a workaround. Swarm expects services to stay up so you need to sleep briefly, use the `TIMESTAMP` trick, and set `restart_policy.condition: on-failure`. See [advanced topics](advanced-topics.md#short-running-jobs).
+Yes, with a workaround. Swarm expects services to stay up so you need to sleep briefly, use the `TIMESTAMP` trick, and set `restart_policy.condition: on-failure`. See [advanced topics](06-advanced-topics.md#short-running-jobs).
 
 </details>

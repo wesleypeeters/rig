@@ -45,7 +45,7 @@ rig deploy
 rig caddy init .dev.example.com   # use your cluster's TLD
 ```
 
-The TLD argument tells Caddy how to strip the cluster-specific suffix from incoming hostnames so upstream services get clean host headers. See [Caddy integration](caddy-integration.md) for details.
+The TLD argument tells Caddy how to strip the cluster-specific suffix from incoming hostnames so upstream services get clean host headers. See [Caddy integration](05-caddy-integration.md) for details.
 
 ## DNS
 
@@ -101,4 +101,4 @@ Add the public key to `~/.ssh/authorized_keys` on the swarm manager. Store the p
 
 ## Production
 
-For production clusters, set `CLUSTER_TLD` to an empty string. Hostnames are used as-is (no suffix). Only deploy on push to main. See the [review environments](review-environments.md) workflow for the full setup.
+For production clusters, set `CLUSTER_TLD` to an empty string. Hostnames are used as-is (no suffix). Only deploy on push to main. See the [review environments](03-review-environments.md) workflow for the full setup.

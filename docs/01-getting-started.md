@@ -74,6 +74,6 @@ Open `https://myapp.localhost`. Done.
 
 ## What's next
 
-- [Defining stacks](defining-stacks.md) for the full config format, route options, secrets, and the anchor/clone pattern
-- [Review environments](review-environments.md) for setting up CI/CD with GitHub Actions
-- [Cluster setup](cluster-setup.md) for deploying to a remote server
+- [Defining stacks](02-defining-stacks.md) for the full config format, route options, secrets, and the anchor/clone pattern
+- [Review environments](03-review-environments.md) for setting up CI/CD with GitHub Actions
+- [Cluster setup](04-cluster-setup.md) for deploying to a remote server

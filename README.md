@@ -57,14 +57,14 @@ Note that the stack environment only specifies which configuration to use -- it 
 
 ## Docs
 
-- [Getting started](docs/getting-started.md) -- from zero to first deployment
-- [Defining stacks](docs/defining-stacks.md) -- stack files, routes, environment variables, secrets
-- [Advanced topics](docs/advanced-topics.md) -- force-restart, short-running jobs, tuning, exec access
-- [Review environments](docs/review-environments.md) -- per-PR deployments with GitHub Actions
-- [Cluster setup](docs/cluster-setup.md) -- setting up a new Swarm cluster
-- [Caddy integration](docs/caddy-integration.md) -- reverse proxy internals and troubleshooting
-- [Special variables](docs/special-variables.md) -- injected environment variables reference
-- [FAQ](docs/faq.md) -- common questions answered
+- [Getting started](docs/01-getting-started.md) -- from zero to first deployment
+- [Defining stacks](docs/02-defining-stacks.md) -- stack files, routes, environment variables, secrets
+- [Review environments](docs/03-review-environments.md) -- per-PR deployments with GitHub Actions
+- [Cluster setup](docs/04-cluster-setup.md) -- setting up a new Swarm cluster
+- [Caddy integration](docs/05-caddy-integration.md) -- reverse proxy internals and troubleshooting
+- [Advanced topics](docs/06-advanced-topics.md) -- force-restart, short-running jobs, tuning, exec access
+- [Special variables](docs/07-special-variables.md) -- injected environment variables reference
+- [FAQ](docs/08-faq.md) -- common questions answered
 
 ## Development
 

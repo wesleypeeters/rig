@@ -26,10 +26,5 @@ export default async function (method = "get", url = "", body?: string, contentT
 	const lines = output.trimEnd().split("\n");
 	const status = Number(lines.pop());
 	const responseBody = lines.join("\n");
-	return {
-		ok: status >= 200 && status < 300,
-		status,
-		text: () => responseBody,
-		json: () => JSON.parse(responseBody || "null")
-	};
+	return { ok: status >= 200 && status < 300, status, body: responseBody };
 }

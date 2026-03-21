@@ -132,7 +132,7 @@ services:
 
 All hostnames used in routes can be suffixed with a cluster TLD. Out-of-the-box, `.localhost` is supported, meaning you can access `https://hello.localhost/`, `https://api.hello.com.localhost/` etc. This is an OS-level feature where all hostnames ending in `.localhost` resolve to `127.0.0.1`.
 
-For remote clusters you configure the TLD through the `CLUSTER_TLD` environment variable. See [cluster setup](cluster-setup.md) for details.
+For remote clusters you configure the TLD through the `CLUSTER_TLD` environment variable. See [cluster setup](04-cluster-setup.md) for details.
 
 > [!important]
 >

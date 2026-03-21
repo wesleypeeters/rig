@@ -6,7 +6,7 @@ import fatalError from "../util/fatal.ts";
  */
 export default async function (method: string, objectUrl: string | number, body?: any) {
 	const response = await caddyFetch(method, `id/${objectUrl}`, body !== undefined ? JSON.stringify(body) : undefined);
-	const data = response.json();
+	const data = JSON.parse(response.body || "null");
 	const error = data?.error;
 	if (!error) return data;
 	if (!body && error.startsWith("unknown object ID")) return undefined;

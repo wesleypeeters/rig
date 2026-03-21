@@ -8,7 +8,9 @@ export default async function (...ignoreLines: string[]) {
 		ignoreLines = [...new Set(ignoreLines).difference(lines)];
 	}
 	if (ignoreLines.length) {
-		await Deno.writeTextFile(gitIgnoreFilename, ignoreLines.join("\n"), { create: true, append: true });
+		const content = await exists(gitIgnoreFilename) ? await Deno.readTextFile(gitIgnoreFilename) : "";
+		const prefix = content.length && !content.endsWith("\n") ? "\n" : "";
+		await Deno.writeTextFile(gitIgnoreFilename, `${prefix}${ignoreLines.join("\n")}\n`, { create: true, append: true });
 		$`git add ${gitIgnoreFilename}`;
 	}
 }

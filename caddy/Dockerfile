@@ -1,10 +1,9 @@
-# Custom Caddy build with:
-# - Cloudflare DNS plugin for DNS-01 challenges
-# - Cloudflare IP module for trusted proxy headers
 ARG CADDY_VERSION="2"
+ARG CLOUDFLARE_DNS_REF=1bc23c92a08e0c38937c6cc28b461722471e78b9
 FROM caddy:${CADDY_VERSION}-builder-alpine AS builder
+ARG CLOUDFLARE_DNS_REF
 RUN xcaddy build \
-	--with github.com/caddy-dns/cloudflare \
+	--with github.com/caddy-dns/cloudflare=github.com/ogerman/cloudflare@${CLOUDFLARE_DNS_REF} \
 	--with github.com/WeidiDeng/caddy-cloudflare-ip
 FROM caddy:${CADDY_VERSION}-alpine
 RUN apk add --no-cache curl

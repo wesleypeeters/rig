@@ -142,50 +142,128 @@ For remote clusters you configure the TLD through the `CLUSTER_TLD` environment 
 
 # Using environment variables
 
-Environment variables can be defined in several places. To prevent confusion, follow these guidelines:
+This is arguably the most important section. Environment variable management is the primary way services are configured.
 
-- Variables that are not environment-specific (always the same value everywhere) belong in `stack.yml`. Use [extensions](https://docs.docker.com/reference/compose-file/extension/) and [fragments](https://docs.docker.com/reference/compose-file/fragments/) to keep things DRY. You can also use the [env_file](https://docs.docker.com/reference/compose-file/services/#env_file) attribute to import variables at interpolation time.
-- Avoid specifying variables in `local.stack.yml` or `ci.stack.yml` unless the values are truly environment-specific.
-- `ci` environment variables targeting a specific cluster should be GitHub Actions secrets or environment variables scoped to that cluster.
-- Secrets such as keys or passwords should _never_ be checked in as code for production. Use [Docker secrets](https://docs.docker.com/reference/compose-file/secrets/) and reference them from GitHub Actions secrets. Locally, use fallback values: `MY_VAR: ${MY_VAR:-my default value}`.
-- Prefer YAML defaults over runtime import methods like `dotenv`.
+### stack.yml is the contract
 
-```yaml
-services:
-  api:
-    environment:
-      DATABASE_HOST: postgres              # default, shared
-      REDIS_URL: redis://redis:6379        # default, shared
-      API_SECRET:                           # empty = must be provided per-environment
-      LOG_LEVEL: ${LOG_LEVEL:-info}        # interpolated with fallback
-```
+Every environment variable the application reads MUST be declared in `stack.yml`. This makes it the single source of truth for what config the application expects. If a variable isn't in `stack.yml`, it doesn't exist as far as the stack is concerned.
 
-# Secrets
+### Priority order (highest to lowest)
 
-The recommended approach is to treat all dev secrets as compromised and commit them. This means any developer can clone the repo, run `rig build && rig deploy`, and have a fully working local environment immediately.
+1. **Docker secrets** (`/run/secrets/<name>`) -- for sensitive data only
+2. **env_file** -- loaded from file path (used in `ci.stack.override.yml` for per-environment config)
+3. **environment section** -- defined in stack files
+4. **.env file** -- auto-loaded by Docker Buildx (local dev only, git-ignored)
+5. **Hardcoded fallbacks** -- `${VAR:-default}` syntax in stack files
 
-**Docker secrets with dev fallbacks:**
+### Declaration patterns
 
-```yaml
-secrets:
-  api_key:
-    file: ${API_KEY_FILE:-dev.key}  # CI injects real key, local uses dev.key
-```
-
-**Environment variables with dev fallbacks:**
-
+**Empty declarations** mean "value provided elsewhere":
 ```yaml
 environment:
-  DB_PASSWORD: ${DB_PASSWORD:-dev_password_123}
+  DATABASE_HOST: mysql          # Has a default -- shared across environments
+  CHAIN_ID:                     # Empty -- MUST be set per-service in stack.override.yml
+  API_KEY:                      # Empty -- set via .env locally, env_file in CI
 ```
 
-**In CI (GitHub Actions):**
+**Default values** use Docker Compose interpolation:
+```yaml
+environment:
+  LOG_LEVEL: ${LOG_LEVEL:-debug}           # Falls back to "debug" if unset
+  DB_PASSWORD: ${DB_PASSWORD:-localpass}    # Falls back for local dev
+```
+
+> [!caution]
+>
+> `${VAR:-}` (fallback to empty string) is an antipattern. It's identical to just writing `VAR:` but adds noise. If there's no actual fallback value, use an empty declaration.
+
+**Required values** that must be set or the stack fails to deploy:
+```yaml
+environment:
+  CRITICAL_KEY: ${CRITICAL_KEY:?}    # Fails with error if not set
+```
+
+### Where to put what
+
+| What | Where | Example |
+|------|-------|---------|
+| Shared defaults | `stack.yml` environment | `BATCH_SIZE: 50` |
+| Per-service values | `stack.override.yml` | `CHAIN_ID: 137` |
+| Local dev values | `local.stack.override.yml` | `RPC_URL: http://devnet:8545` |
+| Local dev secrets | `.env` (git-ignored) | `API_KEY=sk-...` |
+| CI/production config | `ci.stack.override.yml` via `env_file` | `env_file: $MY_SERVICE_ENV_FILE` |
+| Sensitive credentials | Docker secrets | `file: $MY_SECRET_FILE` |
+
+### Rules
+
+- **stack.yml is the contract** -- declare every env var the app reads
+- Variables that are not environment-specific belong in `stack.yml` with defaults. Use [extensions](https://docs.docker.com/reference/compose-file/extension/) and [fragments](https://docs.docker.com/reference/compose-file/fragments/) to keep things DRY.
+- Avoid specifying variables in `local.stack.yml` or `ci.stack.yml` unless the values are truly environment-specific
+- CI environment variables targeting a specific cluster should be GitHub Actions secrets or environment variables scoped to that cluster
+- Never commit real secrets. The `.env` file is for local development only.
+- Prefer YAML defaults over runtime import methods like `dotenv`
+- Never read env vars directly in application code (e.g. `process.env.MY_VAR`). Use a validated helper that checks types and fails fast on missing values. This catches misconfigurations at startup instead of at runtime.
+
+# Secrets & configs
+
+### Docker secrets
+
+For sensitive data (private keys, API tokens, credentials), use Docker secrets instead of environment variables. Secrets are mounted at `/run/secrets/<secret_name>` inside the container.
 
 ```yaml
-# ci.stack.override.yml
+# stack.yml
+secrets:
+  relayer_key:
+    file: ${RELAYER_KEY_FILE:-dev.key}    # CI provides real key, local uses dev.key
+
 services:
   api:
-    env_file: $API_ENV_FILE    # GitHub Actions secret (file type)
+    secrets:
+      - relayer_key
+```
+
+Reading in application code:
+
+```typescript
+const secret = await fs.readFile('/run/secrets/relayer_key', 'utf8');
+```
+
+In CI (GitHub Actions), create a secret containing the file path and reference it in the stack. Locally, commit a `dev.key` file with throwaway credentials that only work against dev infrastructure.
+
+### Docker configs
+
+Similar to secrets but for non-sensitive configuration files. Mounted at `/<config_name>` by default.
+
+```yaml
+configs:
+  my_config:
+    file: $MY_CONFIG_FILE
+
+services:
+  api:
+    configs:
+      - my_config
+```
+
+### Immutability
+
+Docker secrets and configs are immutable in Swarm -- you can't update them in place. Rig handles this automatically by hashing file contents into the name, so you don't need to worry about it.
+
+### When to use secrets vs environment variables
+
+Use Docker secrets for anything that would be dangerous if leaked: private keys, API tokens, database passwords, webhook signing secrets. Use environment variables for everything else: feature flags, URLs, port numbers, log levels.
+
+The dev fallback pattern works the same either way:
+
+```yaml
+# Secrets with dev fallback
+secrets:
+  api_token:
+    file: ${API_TOKEN_FILE:-dev.token}
+
+# Env vars with dev fallback
+environment:
+  DB_PASSWORD: ${DB_PASSWORD:-dev_password_123}
 ```
 
 Rules:

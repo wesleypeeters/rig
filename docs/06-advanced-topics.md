@@ -86,18 +86,51 @@ You can write anywhere in your container's filesystem but once the container sto
 1. Gets deployed to the same node each time (use placement constraints)
 2. Isn't replicated
 
-If you don't, you'll end up with split-brain -- the service lands on a different node and the data volume from the previous node isn't there. Target a specific node with placement constraints in `ci.stack.yml`:
+If you don't, you'll end up with split-brain -- the service lands on a different node and the data volume from the previous node isn't there. Docker Swarm won't synchronize data volumes across nodes for you.
+
+## Placement constraints
+
+Placement constraints target specific Swarm nodes for service deployment. **Only define placement constraints in `ci.stack.yml`** -- local mode is always single-node.
+
+Placement constraints are REQUIRED for stateful services (databases, services with persistent volumes) to prevent the split-brain scenario described above. Do NOT specify placement constraints for stateless services -- let the orchestrator distribute them.
+
+### Convention: node.labels.index
+
+Each node gets a unique `index` label (0-based integer):
+
+```sh
+docker node update --label-add index=0 node-1
+docker node update --label-add index=1 node-2
+```
 
 ```yaml
+# ci.stack.yml
 services:
-  database:
+  mysql:
     deploy:
       placement:
         constraints:
           - node.labels.index == 0
 ```
 
-Only define placement constraints in `ci.stack.yml`. Local mode is always single-node.
+### Other constraint types
+
+```yaml
+# By hostname
+placement:
+  constraints:
+    - node.hostname == my-node
+
+# By role
+placement:
+  constraints:
+    - node.role == worker
+
+# By custom label
+placement:
+  constraints:
+    - node.labels.gpu == true
+```
 
 ## Renaming a stack
 

@@ -15,6 +15,7 @@ COMMANDS
   exec <service> ...   Execute command in service container
   cleanup              Remove stale review environments
   rollback             Redeploy using a previous digest lockfile
+  update               Pull latest version and rebuild caddy
   caddy init [tld]     Initialize Caddy's base configuration
   caddy trust          Install Caddy's root CA certificate locally
   caddy tld <name>     Register a custom TLD wildcard

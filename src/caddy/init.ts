@@ -6,15 +6,16 @@ import info from "../util/info.ts";
 const clusterTld = Deno.args[2] || ".localhost";
 
 // Build the strip regex from the cluster TLD.
+// Strips the TLD suffix from the Host header so route matchers see clean hostnames.
 // Examples:
-//   .localhost           -> (.+)\.localhost$
-//   .dev.example.com     -> (.+)\.[^.]+\.dev\.example\.com$
-//   .devhost             -> (.+)\.\w*host$
+//   .localhost              -> (.+)\.localhost$
+//   .dev.example.com        -> (.+)\.dev\.example\.com$
+//   .devhost                -> (.+)\.\w*host$
 const escapedTld = clusterTld.slice(1).replace(/\./g, "\\.");
 const isHostTld = clusterTld.endsWith("host");
 const stripRegex = isHostTld
 	? "(.+)\\.\\w*host$"
-	: `(.+)\\.${clusterTld.includes("host") ? "\\w*host" : `[^.]+\\.${escapedTld}`}$`;
+	: `(.+)\\.${escapedTld}$`;
 
 const onDemandInternalSubjectsTlsPolicy = {
 	"@id": "@ondemand-internal-subjects",

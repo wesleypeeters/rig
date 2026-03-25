@@ -2,33 +2,20 @@
 
 ## Prerequisites
 
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) with Swarm mode enabled (`docker swarm init`)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) or [OrbStack](https://orbstack.dev/) with the containerd snapshotter enabled and Swarm mode active (`docker swarm init`)
+  - Docker Desktop: enable "Use containerd for pulling and storing images" in settings
+  - OrbStack: add `{"features": {"containerd-snapshotter": true}}` to `~/.orbstack/config/docker.json`
 - [Deno](https://deno.com) installed
 
 ## Install rig
 
-```sh
-deno task install
-```
-
-Verify it works:
+From the repository root, run the init script:
 
 ```sh
-rig
+./init
 ```
 
-## Bootstrap Caddy
-
-Caddy is the reverse proxy that sits in front of all your stacks. It runs as its own Swarm stack and needs to be deployed once per machine/cluster.
-
-```sh
-cd caddy
-rig build
-rig deploy
-rig caddy init
-rig caddy trust    # installs the local root CA -- will ask for your password
-cd ..
-```
+This installs the `rig` command globally, builds and deploys Caddy (the reverse proxy that sits in front of all your stacks), and trusts its local root CA (will ask for your password).
 
 After this, `https://localhost` should respond.
 

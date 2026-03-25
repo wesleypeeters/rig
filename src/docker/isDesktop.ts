@@ -1,3 +1,4 @@
 import $ from "@david/dax";
 
-export default (await $`docker info --format '{{.Name}}'`.text()) === "docker-desktop";
+const name = (await $`docker info --format '{{.Name}}'`.text());
+export default name === "docker-desktop" || name === "orbstack";

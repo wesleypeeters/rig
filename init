@@ -1,0 +1,21 @@
+#!/usr/bin/env sh
+set -eu
+# Make sure containerd snapshotter is active.
+if ! docker info --format '{{range .DriverStatus}}{{index . 1}}{{end}}' | grep -q "io.containerd.snapshotter.v1"; then
+    echo "Please enable 'Use containerd for pulling and storing images' in Docker Desktop settings first."
+    exit 1
+fi
+# Make sure swarm mode is active.
+docker swarm init > /dev/null 2>&1 && echo "Swarm mode enabled" || echo "Swarm mode confirmed"
+# Install the rig command globally.
+deno task install
+# Build and deploy Caddy.
+cd caddy
+rig build
+rig deploy
+echo "\nCaddy is now up-and-running, ready to be configured."
+cd ..
+# Initialize Caddy config for rig deployments.
+rig caddy init
+# Trust Caddy's root CA certificate.
+rig caddy trust

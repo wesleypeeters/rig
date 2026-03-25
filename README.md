@@ -6,26 +6,27 @@ A wrapper around `docker stack`, `docker buildx bake` and Caddy for deploying an
 
 ### Prerequisites
 
-[Docker Desktop](https://docs.docker.com/desktop/setup/install/mac-install/) and [Deno](https://docs.deno.com/runtime/getting_started/installation/) must be installed. Docker Swarm must be initialized (`docker swarm init`).
+[Docker Desktop](https://docs.docker.com/desktop/setup/install/mac-install/) (or [OrbStack](https://orbstack.dev/)) and [Deno](https://docs.deno.com/runtime/getting_started/installation/) must be installed. The containerd snapshotter must be enabled and Docker Swarm must be initialized (`docker swarm init`).
+
+For Docker Desktop, enable "Use containerd for pulling and storing images" in settings. For OrbStack, add the following to `~/.orbstack/config/docker.json`:
+
+```json
+{
+  "features": {
+    "containerd-snapshotter": true
+  }
+}
+```
 
 ### Installation
 
 Check out this repository and from its root run:
 
 ```sh
-deno task install
+./init
 ```
 
-Once installed, deploy and initialize Caddy (the reverse proxy that sits in front of all your stacks):
-
-```sh
-cd caddy
-rig build
-rig deploy
-rig caddy init
-rig caddy trust    # installs local root CA -- will ask for your password
-cd ..
-```
+This will install the `rig` command globally, build and deploy Caddy (the reverse proxy that sits in front of all your stacks), and trust its local root CA (will ask for your password).
 
 ### The `rig` command
 

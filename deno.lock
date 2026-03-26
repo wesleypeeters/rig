@@ -86,6 +86,7 @@
     "dependencies": [
       "jsr:@david/dax@0.45",
       "jsr:@std/crypto@^1.0.5",
+      "jsr:@std/dotenv@~0.225.3",
       "jsr:@std/encoding@^1.0.10",
       "jsr:@std/fs@^1.0.22",
       "jsr:@std/path@^1.1.4",

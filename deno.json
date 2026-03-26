@@ -17,6 +17,7 @@
 		"@std/encoding": "jsr:@std/encoding@^1.0.10",
 		"@std/fs": "jsr:@std/fs@^1.0.22",
 		"@std/path": "jsr:@std/path@^1.1.4",
+		"@std/dotenv": "jsr:@std/dotenv@^0.225.3",
 		"@std/yaml": "jsr:@std/yaml@^1.0.11"
 	}
 }

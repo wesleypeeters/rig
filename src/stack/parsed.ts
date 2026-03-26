@@ -36,6 +36,6 @@ keys(parsed.services).some(s => s.includes(".")) && fatalError("Using '.' charac
 values(parsed.services).filter(s => s.environment).forEach(({ environment }) => {
 	entries(environment!).forEach(([key, value]) => (value === null) && delete environment![key]);
 });
-const ext = parsed["x-rig"];
+const ext = parsed["x-rig"] ??= {} as StackYml["x-rig"];
 ext.routes ? normalizeRoutes(ext.routes) : ext.routes = {};
 export default parsed;

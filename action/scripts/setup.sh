@@ -10,7 +10,7 @@ fi
 
 # Install rig CLI.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-deno install -n rig -gfA "$SCRIPT_DIR/../src/main.ts"
+deno install -n rig -gfAc "$SCRIPT_DIR/../deno.json" "$SCRIPT_DIR/../src/main.ts"
 
 # Setup SSH for remote cluster access.
 if [ -n "${CLUSTER_SSH_KEY:-}" ]; then

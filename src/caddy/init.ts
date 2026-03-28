@@ -4,6 +4,7 @@ import fatalError from "../util/fatal.ts";
 import info from "../util/info.ts";
 
 const clusterTld = Deno.args[2] || ".localhost";
+const privateSubnet = Deno.args.find(a => a.startsWith("--private-subnet="))?.split("=")[1] || null;
 
 // Build the strip regex from the cluster TLD.
 // Strips the TLD suffix from the Host header so route matchers see clean hostnames.
@@ -61,7 +62,8 @@ const globalVarsHandler = {
 	"@id": "@vars",
 	handler: "vars",
 	requestHost: "{http.request.host}",
-	portRanges: []
+	portRanges: [],
+	...(privateSubnet ? { privateSubnet } : {})
 };
 
 const wildcardsMatcher = {
@@ -134,4 +136,4 @@ const config = {
 
 const response = await caddyFetch("post", "load", JSON.stringify(config));
 response.ok || fatalError(JSON.parse(response.body).error);
-info(`Caddy initialized with TLD ${clusterTld}`);
+info(`Caddy initialized with TLD ${clusterTld}${privateSubnet ? ` (private subnet: ${privateSubnet})` : ""}`);

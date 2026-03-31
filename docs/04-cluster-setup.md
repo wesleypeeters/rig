@@ -43,9 +43,10 @@ cd caddy
 rig build
 rig deploy
 rig caddy init .dev.example.com   # use your cluster's TLD
+rig caddy init .dev.example.com --private-subnet=10.0.0.0/24   # with VPN subnet
 ```
 
-The TLD argument tells Caddy how to strip the cluster-specific suffix from incoming hostnames so upstream services get clean host headers. See [Caddy integration](05-caddy-integration.md) for details.
+The TLD argument tells Caddy how to strip the cluster-specific suffix from incoming hostnames so upstream services get clean host headers. The optional `--private-subnet` flag configures which IP range is allowed to access routes marked `access: private` (e.g. your VPN subnet). Multiple subnets can be comma-separated. See [Caddy integration](05-caddy-integration.md) for details.
 
 ## DNS
 
@@ -69,10 +70,12 @@ For teams that need fully private review environments:
 
 1. Run CoreDNS on the cluster resolving `*.devhost` to the cluster IP
 2. Set up WireGuard VPN routing DNS through CoreDNS
-3. Install Caddy's root CA on client machines (`rig caddy trust`)
-4. Register the TLD: `rig caddy tld devhost`
+3. Initialize Caddy with the private TLD and VPN subnet: `rig caddy init .devhost --private-subnet=10.0.0.0/24`
+4. Register the TLD for internal certificate issuance: `rig caddy tld devhost`
+5. Install Caddy's root CA on client machines: `rig caddy trust`
+6. Mark routes that should require VPN access with `access: private` in your stack's `x-rig` routes
 
-Set `CLUSTER_TLD=.devhost` on the cluster.
+Set `CLUSTER_TLD=.devhost` on the cluster. Requests to `private` routes from outside the VPN subnet receive a `403 Forbidden` response.
 
 ### CLUSTER_TLD values
 

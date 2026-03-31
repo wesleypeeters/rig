@@ -41,6 +41,7 @@ When a stack is removed, its port range registration is deleted from Caddy so it
     handle[0] -> global vars handler (@vars)
       portRanges[] -> [{ @id: 0 }, { @id: 1 }, ...]
       requestHost -> {http.request.host}
+      privateSubnet -> (optional, set via --private-subnet)
     handle[1] -> strip host header handler
     {stack_id} -> stack route
       handle[0] -> vars (portRangeId)
@@ -147,6 +148,17 @@ The strip regex is configured during `rig caddy init <tld>`:
 | `.*host` pattern | `\.\w*host$` | `myapp.r42` |
 
 If you change the cluster TLD, re-run `rig caddy init` with the new value.
+
+## Private route enforcement
+
+Routes with `access: private` are restricted to the VPN subnet configured during `rig caddy init --private-subnet=<cidr>`. The subnet value is stored in Caddy's global vars and read by the CLI when generating routes.
+
+For each private route, two Caddy route entries are created:
+
+1. A route matching both the hostname and `remote_ip` within the configured subnet — proxies normally
+2. A fallback route matching only the hostname — returns `403 Forbidden: VPN required`
+
+This means clients outside the subnet see a 403 instead of the service. If no `--private-subnet` is configured, `access: private` routes are treated like any other route (no IP restriction).
 
 ## Troubleshooting
 

@@ -107,7 +107,7 @@ Besides `target:` you can also specify:
 
 > [!note]
 >
-> Access level enforcement beyond `public` is not yet implemented. For now, don't use public hostnames for services that shouldn't be publicly accessible.
+> The `private` access level is enforced by matching the client IP against the VPN subnet configured during `rig caddy init --private-subnet=`. Requests from outside the subnet receive a `403 Forbidden` response. The `internal`, `local`, and `none` levels are not yet enforced.
 
 ```yaml
 # More complete example

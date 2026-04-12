@@ -31,6 +31,7 @@ export type Service = {
 	deploy?: { replicas: number };
 	environment?: Record<string, string | null>;
 	image: string;
+	networks?: Record<string, unknown> | string[];
 	ports?: Port[];
 	volumes?: Volume[];
 	cap_add?: string[];

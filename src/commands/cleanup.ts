@@ -46,10 +46,16 @@ for (const stack of reviewStacks) {
 		isStale = pr.state !== "open";
 	}
 	if (!isStale && maxAgeMs) {
-		// Check stack age via docker service inspect.
-		const created = await $`docker stack ps ${stack.name} --format "{{.CreatedAt}}" --no-trunc`.text();
-		const firstLine = created.trim().split("\n")[0];
-		if (firstLine && (Date.now() - new Date(firstLine).getTime()) > maxAgeMs) isStale = true;
+		// Check stack age via the most-recently-updated service. UpdatedAt resets
+		// on redeploy, so an active stack keeps its clock refreshed.
+		const serviceIds = (await $`docker stack services ${stack.name} --format "{{.ID}}"`.text()).trim().split("\n").filter(Boolean);
+		let newestUpdate = 0;
+		for (const id of serviceIds) {
+			const t = (await $`docker service inspect ${id} --format "{{.UpdatedAt}}"`.text()).trim();
+			const ms = new Date(t).getTime();
+			if (ms > newestUpdate) newestUpdate = ms;
+		}
+		if (newestUpdate && (Date.now() - newestUpdate) > maxAgeMs) isStale = true;
 	}
 	if (isStale) {
 		info(`Removing stale review stack ${stack.name}...`);

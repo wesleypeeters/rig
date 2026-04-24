@@ -1,5 +1,6 @@
 import $ from "@david/dax";
 import info from "../util/info.ts";
+import fatalError from "../util/fatal.ts";
 import name from "../stack/name.ts";
 import removeCaddyConfig from "../stack/removeCaddyConfig.ts";
 import caddyApiFetch from "../caddy/api.ts";
@@ -29,19 +30,20 @@ if (!reviewStacks.length) {
 }
 
 const { GITHUB_TOKEN, GITHUB_REPOSITORY } = optional;
+if (!GITHUB_TOKEN || !GITHUB_REPOSITORY) {
+	fatalError("cleanup needs GITHUB_TOKEN and GITHUB_REPOSITORY to check PR state; set them in the workflow env");
+}
 let removed = 0;
 
 for (const stack of reviewStacks) {
 	let isStale = false;
 	// Check if PR is still open.
-	if (GITHUB_TOKEN && GITHUB_REPOSITORY) {
-		const response = await fetch(`https://api.github.com/repos/${GITHUB_REPOSITORY}/pulls/${stack.prNumber}`, {
-			headers: { authorization: `Bearer ${GITHUB_TOKEN}` }
-		});
-		if (response.ok) {
-			const pr = await response.json();
-			isStale = pr.state !== "open";
-		}
+	const response = await fetch(`https://api.github.com/repos/${GITHUB_REPOSITORY}/pulls/${stack.prNumber}`, {
+		headers: { authorization: `Bearer ${GITHUB_TOKEN}` }
+	});
+	if (response.ok) {
+		const pr = await response.json();
+		isStale = pr.state !== "open";
 	}
 	if (!isStale && maxAgeMs) {
 		// Check stack age via docker service inspect.

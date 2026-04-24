@@ -1,6 +1,6 @@
 import $ from "@david/dax";
 import hasKeys from "../util/hasKeys.ts";
-import { outDir } from "../constants.ts";
+import { outDir, ciMode } from "../constants.ts";
 import info from "../util/info.ts";
 import gitIgnore from "../util/gitIgnore.ts";
 import lockFilePath from "../stack/lockfile.ts";
@@ -30,7 +30,11 @@ if (hasKeys(target)) {
 	const metadataTempFile = `${outDir}/tmp${Date.now()}.json`;
 	info("Building service container images...");
 	const tags = Object.keys(target).map(service => `${service}.tags=${getServiceTag(service)}`);
-	await $`docker buildx bake ${interleave(tags, "--set")} ${$.rawArg(optional.PUSH == "true" ? "--push" : "")} --provenance false --metadata-file ${metadataTempFile} ${fileList}`;
+	const shouldPush = ciMode || optional.PUSH === "true";
+	if (shouldPush && optional.GITHUB_TOKEN) {
+		await $`docker login ghcr.io -u ${optional.GITHUB_ACTOR ?? "x"} --password-stdin`.stdinText(optional.GITHUB_TOKEN).quiet();
+	}
+	await $`docker buildx bake ${interleave(tags, "--set")} ${$.rawArg(shouldPush ? "--push" : "")} --provenance false --metadata-file ${metadataTempFile} ${fileList}`;
 	metadata = JSON.parse(await Deno.readTextFile(metadataTempFile));
 	Deno.remove(metadataTempFile);
 } else {

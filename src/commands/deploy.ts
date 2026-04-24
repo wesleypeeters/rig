@@ -10,6 +10,7 @@ import { portRangeId, stackExists } from "../stack/caddyVars.ts";
 import dedupe from "../util/dedupe.ts";
 import getCanonicalHost from "../util/getCanonicalHost.ts";
 import processFiles from "../stack/processFiles.ts";
+import materializeEnvFiles from "../stack/materializeEnvFiles.ts";
 import { exists } from "@std/fs/exists";
 import lockFilePath from "../stack/lockfile.ts";
 import stack from "../stack/parsed.ts";
@@ -57,6 +58,7 @@ async function deploySwarmStack(servicePorts: string[], allocatedPortRangeId?: n
 	}
 	const { values } = Object;
 	const files = [...values(configs), ...values(secrets)];
+	await materializeEnvFiles(files);
 	const prefix = encodeBase58(id).slice(-11);
 	await processFiles(files, prefix);
 	values(services).forEach(s => delete s.build);

@@ -41,6 +41,7 @@ export type Service = {
 export type FileRef = {
 	file: string;
 	name: string;
+	"x-rig-env"?: string;
 };
 
 export type Stack = {

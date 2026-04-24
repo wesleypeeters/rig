@@ -214,12 +214,19 @@ For sensitive data (private keys, API tokens, credentials), use Docker secrets i
 # stack.yml
 secrets:
   relayer_key:
-    file: ${RELAYER_KEY_FILE:-dev.key}    # CI provides real key, local uses dev.key
+    file: dev/relayer_key    # local dev fallback, committed
 
 services:
   api:
     secrets:
       - relayer_key
+```
+
+```yaml
+# ci.stack.yml
+secrets:
+  relayer_key:
+    x-rig-env: RELAYER_KEY    # CI reads value from env, rig writes the file
 ```
 
 Reading in application code:
@@ -228,21 +235,18 @@ Reading in application code:
 const secret = await fs.readFile('/run/secrets/relayer_key', 'utf8');
 ```
 
-In CI (GitHub Actions), create a secret containing the file path and reference it in the stack. Locally, commit a `dev.key` file with throwaway credentials that only work against dev infrastructure.
+Locally, commit `dev/relayer_key` with throwaway credentials that only work against dev infrastructure. In CI, set `RELAYER_KEY` as a GitHub environment secret. At deploy time rig reads the env var, writes the value to `.rig/secrets/`, and points the Docker secret's `file:` at that path. Fails the deploy if `x-rig-env` is set but the env var is missing or empty.
+
+This sidesteps the GitHub limitation that environment secrets are strings, not files -- rig materializes them into files on the runner before `docker stack deploy` runs.
 
 ### Docker configs
 
-Similar to secrets but for non-sensitive configuration files. Mounted at `/<config_name>` by default.
+Similar to secrets but for non-sensitive configuration files. Mounted at `/<config_name>` by default. Supports `x-rig-env:` the same way secrets do.
 
 ```yaml
 configs:
   my_config:
-    file: $MY_CONFIG_FILE
-
-services:
-  api:
-    configs:
-      - my_config
+    file: dev/my_config.json
 ```
 
 ### Immutability
@@ -253,22 +257,27 @@ Docker secrets and configs are immutable in Swarm -- you can't update them in pl
 
 Use Docker secrets for anything that would be dangerous if leaked: private keys, API tokens, database passwords, webhook signing secrets. Use environment variables for everything else: feature flags, URLs, port numbers, log levels.
 
-The dev fallback pattern works the same either way:
+The dev fallback pattern:
 
 ```yaml
-# Secrets with dev fallback
+# stack.yml -- committed dev values
 secrets:
   api_token:
-    file: ${API_TOKEN_FILE:-dev.token}
+    file: dev/api_token
+services:
+  api:
+    environment:
+      DB_PASSWORD: ${DB_PASSWORD:-dev_password_123}
 
-# Env vars with dev fallback
-environment:
-  DB_PASSWORD: ${DB_PASSWORD:-dev_password_123}
+# ci.stack.yml -- real values from GitHub env
+secrets:
+  api_token:
+    x-rig-env: API_TOKEN
 ```
 
 Rules:
 - Dev secrets are committed and always work out of the box
-- Production secrets never appear in the repo -- they come from GitHub secrets
+- Production secrets never appear in the repo -- they come from GitHub environment secrets
 - Any secret that appears in the repo should only grant access to local/dev infrastructure
 
 # Build targets

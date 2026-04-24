@@ -140,17 +140,15 @@ on:
 jobs:
   cleanup-stale:
     runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
     steps:
       - uses: actions/checkout@v4
-      - uses: rig/action@v1
-        with:
-          command: cleanup
-          max-age: 48h
-        env:
-          CLUSTER_SSH_KEY: ${{ secrets.CLUSTER_SSH_KEY }}
-          CLUSTER_HOST: ${{ secrets.DEV_CLUSTER_IP }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: rig cleanup --max-age=48h
 ```
+
+`rig cleanup` needs `GITHUB_TOKEN` and `GITHUB_REPOSITORY` to check PR state -- it fatals without them. A review stack is removed if its PR is closed **or** if `--max-age=<duration>` is exceeded. Age is measured from the most recent service `UpdatedAt` in the stack, so a redeploy (empty commit, manual dispatch, PR sync) resets the clock.
 
 ## Redeploying
 

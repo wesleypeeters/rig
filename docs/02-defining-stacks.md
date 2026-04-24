@@ -226,8 +226,13 @@ services:
 # ci.stack.yml
 secrets:
   relayer_key:
+    file: dev/relayer_key     # must repeat -- compose replaces the whole entry on merge
     x-rig-env: RELAYER_KEY    # CI reads value from env, rig writes the file
 ```
+
+> [!note]
+>
+> Docker Compose's merge of `secrets:` replaces the entire secret value rather than deep-merging individual fields, so you need both `file:` and `x-rig-env:` together in `ci.stack.yml`. The `file:` here is just a placeholder -- rig overwrites it with the materialized temp file at deploy time.
 
 Reading in application code:
 

@@ -1,6 +1,6 @@
 import "./validate.ts";
 import fatalError from "../util/fatal.ts";
-import { awaitMode } from "../constants.ts";
+import { awaitMode, ciMode } from "../constants.ts";
 import info from "../util/info.ts";
 import hasKeys from "../util/hasKeys.ts";
 import removeSwarmStack from "../stack/removeSwarmStack.ts";
@@ -10,7 +10,6 @@ import { portRangeId, stackExists } from "../stack/caddyVars.ts";
 import dedupe from "../util/dedupe.ts";
 import getCanonicalHost from "../util/getCanonicalHost.ts";
 import processFiles from "../stack/processFiles.ts";
-import materializeEnvFiles from "../stack/materializeEnvFiles.ts";
 import { exists } from "@std/fs/exists";
 import lockFilePath from "../stack/lockfile.ts";
 import stack from "../stack/parsed.ts";
@@ -58,7 +57,12 @@ async function deploySwarmStack(servicePorts: string[], allocatedPortRangeId?: n
 	}
 	const { values } = Object;
 	const files = [...values(configs), ...values(secrets)];
-	await materializeEnvFiles(files);
+	for (const f of files) {
+		if (!f["x-rig-env"]) continue;
+		if (ciMode) fatalError(`x-rig-env ${f["x-rig-env"]} not resolved in CI mode`);
+		if (!f.file) fatalError(`x-rig-env ${f["x-rig-env"]} not resolved and no file: fallback`);
+		delete f["x-rig-env"];
+	}
 	const prefix = encodeBase58(id).slice(-11);
 	await processFiles(files, prefix);
 	values(services).forEach(s => delete s.build);

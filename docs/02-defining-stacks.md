@@ -215,6 +215,7 @@ For sensitive data (private keys, API tokens, credentials), use Docker secrets i
 secrets:
   relayer_key:
     file: dev/relayer_key    # local dev fallback, committed
+    x-rig-env: RELAYER_KEY   # CI reads value from env, rig writes the file
 
 services:
   api:
@@ -222,17 +223,27 @@ services:
       - relayer_key
 ```
 
+A secret declares both a local fallback (`file:`) and an env-sourced override (`x-rig-env:`) in one place. No need to repeat the entry in `ci.stack.yml`. Rig pre-processes input YAMLs before handing them to compose, so the resolved `file:` is what compose validates.
+
+For secrets with no committed fallback (env-only), drop `file:`:
+
 ```yaml
-# ci.stack.yml
 secrets:
-  relayer_key:
-    file: dev/relayer_key     # must repeat -- compose replaces the whole entry on merge
-    x-rig-env: RELAYER_KEY    # CI reads value from env, rig writes the file
+  api_token:
+    x-rig-env: API_TOKEN
 ```
 
-> [!note]
->
-> Docker Compose's merge of `secrets:` replaces the entire secret value rather than deep-merging individual fields, so you need both `file:` and `x-rig-env:` together in `ci.stack.yml`. The `file:` here is just a placeholder -- rig overwrites it with the materialized temp file at deploy time.
+Resolution rules at deploy time:
+
+| Env var | `file:` present | Outcome |
+|---------|-----------------|---------|
+| Set | (any) | Materialized to `.rig/secrets/`, `file:` rewritten to that path |
+| Set but empty | (any) | Fatal |
+| Unset, CI mode | (any) | Fatal |
+| Unset, local mode | yes | Falls back to `file:` |
+| Unset, local mode | no | Fatal |
+
+Non-deploy commands (`config`, `validate`, `build`) skip the unset-env fatal so you can inspect or validate stacks without secrets present.
 
 Reading in application code:
 
@@ -240,7 +251,7 @@ Reading in application code:
 const secret = await fs.readFile('/run/secrets/relayer_key', 'utf8');
 ```
 
-Locally, commit `dev/relayer_key` with throwaway credentials that only work against dev infrastructure. In CI, set `RELAYER_KEY` as a GitHub environment secret. At deploy time rig reads the env var, writes the value to `.rig/secrets/`, and points the Docker secret's `file:` at that path. Fails the deploy if `x-rig-env` is set but the env var is missing or empty.
+Locally, commit `dev/relayer_key` with throwaway credentials that only work against dev infrastructure. In CI, set `RELAYER_KEY` as a GitHub environment secret. At deploy time rig reads the env var, writes the value to `.rig/secrets/`, and points the Docker secret's `file:` at that path.
 
 This sidesteps the GitHub limitation that environment secrets are strings, not files -- rig materializes them into files on the runner before `docker stack deploy` runs.
 
@@ -265,19 +276,15 @@ Use Docker secrets for anything that would be dangerous if leaked: private keys,
 The dev fallback pattern:
 
 ```yaml
-# stack.yml -- committed dev values
+# stack.yml
 secrets:
   api_token:
-    file: dev/api_token
+    file: dev/api_token        # committed dev value, used when env unset locally
+    x-rig-env: API_TOKEN       # real value from GitHub env in CI
 services:
   api:
     environment:
       DB_PASSWORD: ${DB_PASSWORD:-dev_password_123}
-
-# ci.stack.yml -- real values from GitHub env
-secrets:
-  api_token:
-    x-rig-env: API_TOKEN
 ```
 
 Rules:

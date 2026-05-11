@@ -117,6 +117,34 @@ For review environments, hostnames get a `.r{pr_number}` suffix before the clust
 
 The custom Caddy build includes the Cloudflare DNS plugin and the Cloudflare IP module for trusted proxy headers.
 
+### Review environments don't get a clean wildcard
+
+Review env hostnames built by rig follow the pattern `<route>.r<pr>.tld`, e.g. `app.r42.example.com`. That's two labels prepended to the registered domain. Public CAs only issue wildcards with one `*` at the leftmost position (CABF baseline), so a single cert can't cover all review envs at once. The options:
+
+- **Single-level wildcard for top-level routes only.** `*.example.com` covers `app.example.com`, `api.example.com`, etc. Combine with per-hostname on-demand for the review env URLs. This is what rig clusters use today.
+- **Pay for Cloudflare Advanced Certificate Manager** ($10/mo per zone). Issues multi-label wildcards outside the standard. Skipped on rig clusters since on-demand works.
+- **Restructure URLs to a single label.** Instead of `app.r42.example.com`, generate `app-r42.example.com`. Then `*.example.com` covers everything. Big change to the rig route scheme.
+
+### Switch to ZeroSSL to dodge LE rate limits
+
+Let's Encrypt enforces 50 certificates per registered domain per 168h. On a busy review-env cluster the per-hostname on-demand path will hit this within a week. **Configure ZeroSSL as the primary ACME issuer with Let's Encrypt as fallback.** Same DNS-01 challenge path, same Cloudflare provider for the TXT record, much more permissive ACME rate limits.
+
+ZeroSSL uses External Account Binding (EAB) for ACME. Get credentials once per email:
+
+```sh
+curl -sS -X POST https://api.zerossl.com/acme/eab-credentials-email \
+  -d "email=you@example.com"
+# returns eab_kid and eab_hmac_key
+```
+
+Then configure the issuer with `ca: https://acme.zerossl.com/v2/DV90`, `email`, `external_account.{key_id, mac_key}`, and the DNS-01 challenge config. Add a second plain `acme` issuer in the same policy's `issuers` array to fall back to Let's Encrypt if ZeroSSL fails.
+
+### Don't leave on-demand ACME open
+
+The default `@ondemand-subjects` policy that `rig caddy init` installs allows on-demand cert issuance for **any** hostname. On a publicly-reachable cluster, random TLS SNI from scanners will trigger ACME issuance and burn your CA's rate limit on garbage hostnames. The `permission.endpoint` points back at caddy's own admin API and returns `200` for any domain, so there's no filter.
+
+If you can't restrict the permission endpoint (open task), at least switch the on-demand issuer to ZeroSSL so the inevitable spam doesn't take you out. Keep `@ondemand-internal-subjects` (covers `*.localhost`) since it uses the internal CA, not a public one.
+
 ## Custom build
 
 The `caddy/Dockerfile` builds Caddy with two plugins:

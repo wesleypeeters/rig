@@ -132,6 +132,31 @@ placement:
     - node.labels.gpu == true
 ```
 
+## Ingress IP exhaustion
+
+Every Swarm service that publishes a port (i.e. every service that's a Caddy route target via `x-rig.routes`) holds a VIP on Swarm's `ingress` overlay. The default ingress subnet is a `/16` but some bootstrap procedures pick a `/24` to avoid colliding with private cluster networks. A `/24` is far too small for any cluster that churns review environments.
+
+There's also an upstream Docker Swarm bug (visible in 29.x) where service teardown sometimes emits an IPAM release entry with an empty `vip.addr`. The IPAM driver can't parse it, so the slot is never returned to the pool. Every redeploy that hits the bug burns one slot permanently.
+
+### Symptoms
+
+Tasks for any service with a route in `x-rig.routes` get stuck in `new created` with no node assigned and no error message. Services without published ports (databases, internal-only workers) continue to come up normally. On the manager:
+
+```sh
+journalctl -u docker --no-pager | grep -E "could not find an available IP|deallocating vip"
+```
+
+`could not find an available IP while allocating VIP` is the exhaustion. Empty `vip.addr=` in `deallocating vip` lines is the leak source.
+
+### Recovery
+
+1. Remove every stack that has services with published ports (`docker service ls --format "{{.Name}}|{{.Ports}}" | grep tcp` to inventory). Caddy must be in the list since it owns the cluster's `:80`/`:443`.
+2. `docker network rm ingress`
+3. `docker network create --driver overlay --ingress --subnet=<larger-cidr> --gateway=<gw> ingress` with a subnet that's at least `/16` and doesn't overlap your private cluster network.
+4. Redeploy caddy, then your application stacks.
+
+If caddy was previously deployed in ingress mode and you're switching to host mode, the running caddy container may keep its ingress attachment after the service update. `docker kill` the container so the orchestrator replaces it with one whose network membership reflects the new spec.
+
 ## Renaming a stack
 
 If you need to rename a stack:

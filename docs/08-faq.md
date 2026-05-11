@@ -80,3 +80,10 @@ You'll need to remove the old stack, rename it, and redeploy. Any data in volume
 Yes, with a workaround. Swarm expects services to stay up so you need to sleep briefly, use the `TIMESTAMP` trick, and set `restart_policy.condition: on-failure`. See [advanced topics](06-advanced-topics.md#short-running-jobs).
 
 </details>
+
+<details>
+<summary>Review env backends and frontends are stuck in `new created`. Why?</summary>
+
+Almost always Swarm's `ingress` overlay has run out of IPs. Caddy-routed services hold a VIP on ingress; services without routes (databases, internal workers) don't, which is why those stay up. Check the manager journal for `could not find an available IP while allocating VIP`. See [advanced topics: ingress IP exhaustion](06-advanced-topics.md#ingress-ip-exhaustion) for sizing guidance and the recovery procedure.
+
+</details>

@@ -34,6 +34,18 @@ docker node update --label-add index=1 node-2
 
 Only use placement constraints in `ci.stack.yml`. Local mode is always single-node.
 
+## Size the ingress network
+
+Swarm creates a default `ingress` overlay on `swarm init` but the default subnet may overlap your private cluster network or be too small for review environment churn. Recreate it with a generous `/16` before deploying anything:
+
+```sh
+docker network rm ingress
+docker network create --driver overlay --ingress \
+  --subnet=10.20.0.0/16 --gateway=10.20.0.1 ingress
+```
+
+Pick a `/16` that doesn't overlap your private cluster network. See [advanced topics: ingress IP exhaustion](06-advanced-topics.md#ingress-ip-exhaustion) for why this matters and how to recover if it's too late.
+
 ## Deploy Caddy
 
 Clone this repo on the cluster (or rsync it), then:

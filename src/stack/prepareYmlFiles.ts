@@ -1,5 +1,5 @@
 import { ensureDir } from "@std/fs";
-import { join, basename, resolve, isAbsolute } from "@std/path";
+import { join, basename, resolve, isAbsolute, dirname } from "@std/path";
 import { parse, stringify } from "@std/yaml";
 import fatalError from "../util/fatal.ts";
 import { outDir } from "../constants.ts";
@@ -36,8 +36,10 @@ export default async function prepareYmlFiles(files: string[]): Promise<string[]
 	return Promise.all(docs.map(async ({ path, doc }) => {
 		await materializeRefs(doc.secrets);
 		await materializeRefs(doc.configs);
-		absolutizeRefs(doc.secrets);
-		absolutizeRefs(doc.configs);
+		const base = resolve(dirname(path));
+		absolutizeRefs(doc.secrets, base);
+		absolutizeRefs(doc.configs, base);
+		absolutizeServiceBinds(doc.services, base);
 		const out = join(PREPARED_DIR, basename(path));
 		await Deno.writeTextFile(out, stringify(doc));
 		return out;
@@ -47,11 +49,39 @@ export default async function prepareYmlFiles(files: string[]): Promise<string[]
 // Make every file: path absolute. The prepared YAMLs live in a different
 // directory than the originals, so compose would resolve relative paths from
 // the wrong base.
-function absolutizeRefs(refs?: Record<string, FileRef>) {
+function absolutizeRefs(refs: Record<string, FileRef> | undefined, base: string) {
 	if (!refs) return;
 	for (const f of Object.values(refs)) {
-		if (f.file && !isAbsolute(f.file)) f.file = resolve(f.file);
+		if (f.file && !isAbsolute(f.file)) f.file = resolve(base, f.file);
 	}
+}
+
+// Same problem as absolutizeRefs but for service-level bind mount sources.
+// Compose resolves relative bind sources against the input file's directory;
+// once we move the YAML into .rig/prepared/ those paths point at the wrong
+// place. Only rewrite paths that look like bind mounts (start with . or ~);
+// named volumes have no path separator and must be left alone.
+function absolutizeServiceBinds(services: Stack["services"] | undefined, base: string) {
+	if (!services) return;
+	for (const service of Object.values(services)) {
+		if (!service.volumes) continue;
+		const volumes = service.volumes as unknown[];
+		for (let i = 0; i < volumes.length; i++) {
+			const v = volumes[i];
+			if (typeof v === "string") {
+				const [source, ...rest] = v.split(":");
+				if (!isRelativeBindPath(source)) continue;
+				volumes[i] = [resolve(base, source), ...rest].join(":");
+			} else if (v && typeof v === "object" && "source" in v && typeof (v as { source: unknown }).source === "string") {
+				const obj = v as { source: string };
+				if (isRelativeBindPath(obj.source)) obj.source = resolve(base, obj.source);
+			}
+		}
+	}
+}
+
+function isRelativeBindPath(source: string): boolean {
+	return source.startsWith(".") || source.startsWith("~");
 }
 
 function hasRigEnv(refs?: Record<string, FileRef>) {

@@ -13,6 +13,7 @@ COMMANDS
   show                 Interactive overview of running services
   debug <service>      Shell into a running service container
   exec <service> ...   Execute command in service container
+  run <service> ...    Run a fresh container from a service image (cwd mounted at /project)
   cleanup              Remove stale review environments
   rollback             Redeploy using a previous digest lockfile
   update               Pull latest version and rebuild caddy

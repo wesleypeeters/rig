@@ -6,7 +6,7 @@ import fatalError from "../util/fatal.ts";
 const { keys, values, entries } = Object;
 
 function normalizeRoutes(routes: Routes) {
-	const defaults: Omit<RouteConfig, "target"> = { access: "internal" };
+	const defaults: Omit<RouteConfig, "target"> = { access: "internal", csp: "optional" };
 	entries(routes).forEach(([hosts, value]) => {
 		const [primaryHost] = hosts.split(/\.| /, 1);
 		if (value && typeof value === "object") {

@@ -7,6 +7,7 @@ import { ciMode } from "../constants.ts";
 
 const hostnameRegex = /^(?!-)[a-z\d-]{1,63}(?<!-)(\.(?!-)[a-z\d-]{1,63}(?<!-))*$/;
 const validAccess = new Set(["internal", "local", "private", "public"]);
+const validCsp = new Set(["mandatory", "optional"]);
 
 function validate({ services, ["x-rig"]: { routes } }: StackYml) {
 	validateRoutes(routes);
@@ -34,7 +35,7 @@ function validatePublishedRoute(route: string) {
 	if (route !== "/") fatalError(`Route ${JSON.stringify(route)} is currently not supported: only "/" is allowed`);
 }
 
-function validateRouteConfig({ target, access }: RouteConfig) {
+function validateRouteConfig({ target, access, csp }: RouteConfig) {
 	const { protocol, hostname, pathname, username, password, search, hash } = target;
 	const isValidUrl = !hostname.includes(".")
 		&& pathname === "/"
@@ -42,6 +43,7 @@ function validateRouteConfig({ target, access }: RouteConfig) {
 		&& username + password + search + hash === "";
 	if (!isValidUrl) fatalError(`Target ${JSON.stringify(target)} currently not supported`);
 	if (!validAccess.has(access)) fatalError(`Access level ${JSON.stringify(access)} currently not supported`);
+	if (!validCsp.has(csp)) fatalError(`CSP value ${JSON.stringify(csp)} currently not supported`);
 }
 
 function validateRoutes(routes: Routes) {

@@ -1,6 +1,8 @@
 export type Access = "none" | "internal" | "local" | "private" | "public";
 
-export type RouteConfig = { access: Access; target: URL };
+export type Csp = "mandatory" | "optional";
+
+export type RouteConfig = { access: Access; csp: Csp; target: URL };
 
 export type Routes = Record<string, Record<string, RouteConfig>>;
 

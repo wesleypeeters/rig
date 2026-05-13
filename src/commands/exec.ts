@@ -8,5 +8,6 @@ if (!service) fatalError("Usage: rig exec <service> <command...>");
 const cmd = Deno.args.slice(2);
 if (!cmd.length) fatalError("No command specified");
 
-const containerId = await findContainer(service);
+const { containerId, dockerHost } = await findContainer(service);
+if (dockerHost) Deno.env.set("DOCKER_HOST", dockerHost);
 await $`docker exec -it ${containerId} ${cmd}`;

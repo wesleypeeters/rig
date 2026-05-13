@@ -5,5 +5,6 @@ import fatalError from "../util/fatal.ts";
 const service = Deno.args[1];
 if (!service) fatalError("Usage: rig debug <service>");
 
-const containerId = await findContainer(service);
+const { containerId, dockerHost } = await findContainer(service);
+if (dockerHost) Deno.env.set("DOCKER_HOST", dockerHost);
 await $`docker debug ${containerId}`;

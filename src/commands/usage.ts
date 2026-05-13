@@ -9,6 +9,7 @@ COMMANDS
   rm [await]           Remove stack from swarm + caddy
   build                Build images via docker buildx bake + lock digests
   config               Output merged, interpolated stack YAML
+  json                 Output merged stack config as JSON
   validate             Validate stack against governance rules
   show                 Interactive overview of running services
   debug <service>      Shell into a running service container

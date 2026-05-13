@@ -54,7 +54,7 @@ x-rig:
 
 > [!tip]
 >
-> You can use `rig config` to see the fully expanded YAML output.
+> You can use `rig config` to see the fully expanded YAML output, or `rig json` for the post-normalization config as JSON.
 
 From the above example we can deduce:
 
@@ -108,6 +108,10 @@ Besides `target:` you can also specify:
 > [!note]
 >
 > The `private` access level is enforced by matching the client IP against the VPN subnet configured during `rig caddy init --private-subnet=`. Requests from outside the subnet receive a `403 Forbidden` response. The `internal`, `local`, and `none` levels are not yet enforced.
+
+- `csp:` declares the route's CSP policy: `mandatory` or `optional` (default)
+
+  `mandatory` is intended to reject backend responses that don't emit a `Content-Security-Policy` header. The field is currently accepted and validated but not enforced -- declare it now and it'll start being honored once the response-header check lands.
 
 ```yaml
 # More complete example

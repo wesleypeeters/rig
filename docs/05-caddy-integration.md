@@ -58,7 +58,9 @@ Per-stack route:
   "handle": [
     {
       "handler": "vars",
-      "portRangeId": 0
+      "portRangeId": 0,
+      "directory": "/path/to/stack/source",
+      "repository": "owner/repo"
     },
     {
       "handler": "subroute",
@@ -147,12 +149,23 @@ If you can't restrict the permission endpoint (open task), at least switch the o
 
 ## Custom build
 
-The `caddy/Dockerfile` builds Caddy with two plugins:
+The `caddy/Dockerfile` builds Caddy with these plugins:
 
 - `caddy-dns/cloudflare` -- DNS-01 ACME challenges for wildcard certs
 - `WeidiDeng/caddy-cloudflare-ip` -- recognizes Cloudflare proxy IPs for `X-Forwarded-For` trust
+- `darkweak/souin/plugins/caddy` + `darkweak/storages/otter/caddy` -- RFC 9111 conditional cache
 
 It also includes `curl` for the admin API client.
+
+## HTTP cache
+
+The Souin cache handler sits in the global handler chain, so every routed request runs through it. Backends opt in by emitting `Cache-Control: public, max-age=N` on responses. Without that header, requests are passed through unchanged (`default_cache_control: "no-store"`). Cached responses are served straight from a 50k-entry in-process Otter store; conditional requests (`If-None-Match`, `If-Modified-Since`) are honored.
+
+Defaults set during `rig caddy init`:
+
+- `ttl: 10s` -- fallback freshness when a backend opts in but doesn't set `max-age`
+- `stale: 1h` -- how long stale entries can be served while revalidating
+- `default_cache_control: no-store` -- nothing is cached unless the backend asks for it
 
 ## How TLD stripping works
 

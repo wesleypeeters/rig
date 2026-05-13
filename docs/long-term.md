@@ -21,3 +21,5 @@ The port allocation scheme gives each stack 10 ports within a ~1,600–1,700 por
 Currently the CLI talks to Caddy's admin API via `docker exec`, which means you have to be on the swarm manager node (or SSH in). This works for CI but it means I can't run `rig deploy` or `rig exec` from my laptop against a remote cluster without an SSH tunnel.
 
 It'd be sick to just run commands locally and have them hit a remote cluster directly. Something like `rig --cluster=dev deploy` or `rig exec --cluster=live reshark sh` without needing to SSH into a manager first. This probably means exposing a small authenticated API on the cluster side, or at minimum a smarter transport layer than `docker exec` over SSH. Big lift, but the payoff is huge — managing everything from one terminal.
+
+> Partial progress: `rig exec` and `rig debug` already hop from the manager to a worker node automatically when the target task lives there (via `DOCKER_HOST=ssh://$CLUSTER_SSH_USER@<node-ip>`). The hard part — talking to a remote manager from a laptop without SSHing in first — is still open.

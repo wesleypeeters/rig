@@ -79,6 +79,27 @@ rig exec my-service sh -c 'echo hello from the cluster'
 >
 > `rig exec` connects to the first container on the cluster belonging to the service. If there are replicas the command will _not_ be executed on each one.
 
+If the service has no running task (scaled to zero, last task exited), `rig exec` and `rig debug` will force a service update to respawn one before attaching. If the task lives on a worker node, `rig` resolves the node's IP via `docker node inspect` and tunnels through `ssh://$CLUSTER_SSH_USER@<node-ip>` automatically.
+
+## Run a service image standalone
+
+`rig run <service> [args...]` starts a fresh container from the service's resolved image tag, with the current directory bind-mounted at `/project`. Handy for poking at an entrypoint or running a one-off command without going through the swarm:
+
+```sh
+rig run api sh
+rig run worker node scripts/migrate.js
+```
+
+## Find a deployed stack's source directory
+
+`rig deploy` records the working directory it ran from in the stack's caddy vars. `rig dir <stack>` reads it back, so you can jump to a stack's source without remembering where it lives:
+
+```sh
+cd $(rig dir my-app)
+```
+
+Re-deploying the same stack from a different directory is refused (set `RIG_FORCE_DIR=1` to override) so two clones can't accidentally fight over the same name.
+
 ## Storing data on the cluster
 
 You can write anywhere in your container's filesystem but once the container stops the data is lost. For persistent data, always use a volume mount. Make sure that a service using a volume for data storage:

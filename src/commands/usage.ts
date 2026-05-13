@@ -19,6 +19,7 @@ COMMANDS
   rollback             Redeploy using a previous digest lockfile
   update               Pull latest version and rebuild caddy
   network <name>       Create a swarm-scoped overlay network
+  dir <stack>          Print the source directory recorded for a deployed stack
   caddy init [tld]     Initialize Caddy's base configuration
   caddy trust          Install Caddy's root CA certificate locally
   caddy tld <name>     Register a custom TLD wildcard

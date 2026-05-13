@@ -55,6 +55,7 @@ export function createCaddyStackConfig(stackId: string, routes: Routes, portRang
 			{
 				handler: "vars",
 				repository: optional.GITHUB_REPOSITORY || null,
+				directory: Deno.cwd(),
 				portRangeId
 			},
 			...caddyRoutes.length ? [{

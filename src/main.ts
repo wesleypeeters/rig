@@ -4,7 +4,7 @@ import "@std/dotenv/load";
 
 function findModule() {
 	const [a0, a1] = Deno.args;
-	if (/^(config|validate|build|deploy|show|debug|exec|run|rm|cleanup|rollback|update)$/.test(a0)) return a0;
+	if (/^(config|validate|build|deploy|show|debug|exec|run|rm|cleanup|rollback|update|network)$/.test(a0)) return a0;
 	if (a0 === "caddy") {
 		if (/^(init|trust|tld|log)$/.test(a1)) return `caddy/${a1}`;
 	}

@@ -65,6 +65,17 @@ const stripHostHeaderHandler = {
 	}
 };
 
+// RFC 9111 conditional caching via Souin (Otter in-process backend).
+// Backends opt in by setting Cache-Control: public, max-age=... on responses.
+const cacheHandler = {
+	handler: "cache",
+	api: { souin: {} },
+	otter: { configuration: { size: 50000 } },
+	default_cache_control: "no-store",
+	ttl: "10s",
+	stale: "1h"
+};
+
 const globalVarsHandler = {
 	"@id": "@vars",
 	handler: "vars",
@@ -120,7 +131,8 @@ const config = {
 						{
 							handle: [
 								globalVarsHandler,
-								stripHostHeaderHandler
+								stripHostHeaderHandler,
+								cacheHandler
 							]
 						},
 						wildcardsMatcher,

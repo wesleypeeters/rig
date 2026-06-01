@@ -18,6 +18,7 @@ import id from "../stack/id.ts";
 import type { Stack } from "../stack/types.ts";
 import { encodeBase58 } from "@std/encoding/base58";
 import { createCaddyStackConfig } from "../caddy/routes.ts";
+import syncPublicSubjects from "../caddy/syncPublicSubjects.ts";
 import { portRangeLength, getRangeFirstPort, findNextPortRangeId } from "../stack/ports.ts";
 
 const { routes } = stack["x-rig"];
@@ -93,7 +94,10 @@ async function deploy() {
 	const servicePorts = getServicePorts();
 	if (servicePorts.length > portRangeLength) fatalError(`A stack can't expose more than ${portRangeLength} ports`);
 	const confirmedPortRangeId = servicePorts.length ? (portRangeId ?? await findNextPortRangeId()) : undefined;
-	if (id !== "caddy") await deployCaddyStack(servicePorts, confirmedPortRangeId!);
+	if (id !== "caddy") {
+		await deployCaddyStack(servicePorts, confirmedPortRangeId!);
+		await syncPublicSubjects();
+	}
 	if (hasKeys(stack.services)) {
 		Object.values(stack.services).forEach(service => delete service.env_file);
 		await deploySwarmStack(servicePorts, confirmedPortRangeId!);

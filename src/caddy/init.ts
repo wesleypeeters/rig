@@ -1,5 +1,5 @@
 import caddyFetch from "./fetch.ts";
-import { defaultOnDemandInternalSubjects } from "./tls.ts";
+import { defaultOnDemandInternalSubjects, publicAllowlistSentinel } from "./tls.ts";
 import fatalError from "../util/fatal.ts";
 import info from "../util/info.ts";
 
@@ -25,10 +25,17 @@ const onDemandInternalSubjectsTlsPolicy = {
 	subjects: defaultOnDemandInternalSubjects
 };
 
+// Public ACME issuance is scoped to an explicit allowlist that rig keeps in
+// sync with the deployed stacks (see syncPublicSubjects). Without a subjects
+// list this policy matched every SNI, so any scanner spraying junk hostnames
+// at the cluster opened an ACME order per name and exhausted the Let's Encrypt
+// new-orders-per-account limit, starving real review envs of certs. The
+// sentinel keeps the list non-empty (empty == match all in Caddy).
 const onDemandSubjectsTlsPolicy = {
 	"@id": "@ondemand-subjects",
 	issuers: [{ module: "acme" }],
-	on_demand: true
+	on_demand: true,
+	subjects: [publicAllowlistSentinel]
 };
 
 const internalSubjectsTlsPolicy = {
@@ -63,6 +70,7 @@ const globalVarsHandler = {
 	handler: "vars",
 	requestHost: "{http.request.host}",
 	portRanges: [],
+	clusterTld,
 	...(privateSubnet ? { privateSubnet } : {})
 };
 
@@ -89,6 +97,11 @@ const config = {
 				srv0: {
 					"@id": "@stacks",
 					listen: [":443"],
+					// Route matchers are registered with the TLD stripped (app.r33, not
+					// app.r33.reshark.dev), so they are not real public names. Let Caddy's
+					// automatic HTTPS skip cert management for them; public certs are
+					// obtained on-demand against the FQDN allowlist instead.
+					automatic_https: { disable_certificates: true },
 					client_ip_headers: [
 						"CF-Connecting-IP",
 						"X-Real-IP",
@@ -118,6 +131,12 @@ const config = {
 		},
 		tls: {
 			automation: {
+				// This endpoint always answers 200 (it just reads back admin config),
+				// so it grants every request it sees. That is acceptable only because
+				// the on_demand policies above are scoped: ACME on_demand is gated by
+				// the FQDN allowlist and the internal one by *.localhost, so an
+				// unknown SNI never reaches this check. Tightening it to a real
+				// deny-by-default handler would be belt-and-suspenders.
 				on_demand: {
 					permission: {
 						module: "http",

@@ -72,7 +72,7 @@ Point a wildcard DNS record at your cluster:
 
 Set `CLUSTER_TLD=.dev.example.com` on the cluster.
 
-Review environments like `api.example.com.r42.dev.example.com` resolve via public DNS. Caddy provisions TLS certificates via Let's Encrypt automatically.
+Review environments like `api.example.com.r42.dev.example.com` resolve via public DNS. Caddy provisions TLS certificates automatically, on-demand and scoped to the hostnames rig is actually serving (see [Caddy integration: public ACME allowlist](05-caddy-integration.md#public-acme-is-scoped-to-the-deployed-host-allowlist)).
 
 This is the simplest approach. Review environment links work for anyone without VPN setup.
 
@@ -100,7 +100,7 @@ Set `CLUSTER_TLD=.devhost` on the cluster. Requests to `private` routes from out
 
 ## TLS
 
-- **Real subdomains**: automatic via Let's Encrypt (HTTP-01 challenge)
+- **Real subdomains**: automatic via ACME (Let's Encrypt by default), issued on-demand and scoped to the deployed-host allowlist (see [Caddy integration: TLS](05-caddy-integration.md#tls)). On busy review-env clusters, switch the issuer to [ZeroSSL](05-caddy-integration.md#switch-to-zerossl-to-dodge-le-rate-limits) to dodge rate limits.
 - **Wildcard certs**: DNS-01 challenge with Cloudflare plugin. Set `CF_API_TOKEN` in Caddy's environment.
 - **Private TLDs**: internal CA. Run `rig caddy tld <name>` to register, then `rig caddy trust` on client machines.
 

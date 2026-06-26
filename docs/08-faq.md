@@ -31,6 +31,8 @@ rig rollback
 rig deploy
 ```
 
+By default `rig rollback` picks the second-most-recent lockfile in the output directory. To target a specific one, use `rig rollback --to=<name>`, where `<name>` is the lockfile's basename without `.json`.
+
 You can also re-run a previous GitHub Actions workflow run from the Actions tab.
 
 </details>

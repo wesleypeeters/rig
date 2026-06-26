@@ -100,6 +100,26 @@ cd $(rig dir my-app)
 
 Re-deploying the same stack from a different directory is refused (set `RIG_FORCE_DIR=1` to override) so two clones can't accidentally fight over the same name.
 
+## Shared overlay networks
+
+Stacks run on their own per-stack overlay networks, so by default services in different stacks can't reach each other. When you do want a shared network -- e.g. a database stack that several app stacks talk to -- pre-create an attachable, swarm-scoped overlay:
+
+```sh
+rig network shared-data
+```
+
+This runs `docker network create --driver overlay --scope swarm --attachable <name>`. Declare it as an external network in the stacks that need to share it.
+
+## Updating rig
+
+`rig update` pulls the latest rig, reinstalls the command, then rebuilds and redeploys Caddy from the checkout `rig` was installed from:
+
+```sh
+rig update
+```
+
+Run it wherever `DOCKER_HOST` points to roll out a new Caddy build after pulling changes.
+
 ## Storing data on the cluster
 
 You can write anywhere in your container's filesystem but once the container stops the data is lost. For persistent data, always use a volume mount. Make sure that a service using a volume for data storage:

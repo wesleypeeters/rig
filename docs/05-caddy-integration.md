@@ -41,6 +41,7 @@ When a stack is removed, its port range registration is deleted from Caddy so it
     handle[0] -> global vars handler (@vars)
       portRanges[] -> [{ @id: 0 }, { @id: 1 }, ...]
       requestHost -> {http.request.host}
+      clusterTld -> e.g. .dev.example.com (used to rebuild the public TLS allowlist)
       privateSubnet -> (optional, set via --private-subnet)
     handle[1] -> strip host header handler
     {stack_id} -> stack route
@@ -114,7 +115,7 @@ For review environments, hostnames get a `.r{pr_number}` suffix before the clust
 |---------------|-------------------|
 | `*.localhost` | Caddy internal CA (on-demand) |
 | Custom private TLDs | Caddy internal CA (on-demand) |
-| Public FQDNs | ACME HTTP-01 (Let's Encrypt) |
+| Public FQDNs | ACME on-demand, scoped to the deployed-host allowlist (see [below](#public-acme-is-scoped-to-the-deployed-host-allowlist)) |
 | Wildcard public domains | ACME DNS-01 (Cloudflare plugin) |
 
 The custom Caddy build includes the Cloudflare DNS plugin and the Cloudflare IP module for trusted proxy headers.
@@ -141,11 +142,17 @@ curl -sS -X POST https://api.zerossl.com/acme/eab-credentials-email \
 
 Then configure the issuer with `ca: https://acme.zerossl.com/v2/DV90`, `email`, `external_account.{key_id, mac_key}`, and the DNS-01 challenge config. Add a second plain `acme` issuer in the same policy's `issuers` array to fall back to Let's Encrypt if ZeroSSL fails.
 
-### Don't leave on-demand ACME open
+### Public ACME is scoped to the deployed-host allowlist
 
-The default `@ondemand-subjects` policy that `rig caddy init` installs allows on-demand cert issuance for **any** hostname. On a publicly-reachable cluster, random TLS SNI from scanners will trigger ACME issuance and burn your CA's rate limit on garbage hostnames. The `permission.endpoint` points back at caddy's own admin API and returns `200` for any domain, so there's no filter.
+Public certs are issued on-demand, but only for the hostnames rig is actually serving. The `@ondemand-subjects` policy carries an explicit `subjects` allowlist -- and an empty list means "match any SNI" in Caddy, which is the thing to avoid: on a publicly-reachable cluster, scanners spraying random SNIs would each open an ACME order and burn the issuer's rate limit on garbage hostnames.
 
-If you can't restrict the permission endpoint (open task), at least switch the on-demand issuer to ZeroSSL so the inevitable spam doesn't take you out. Keep `@ondemand-internal-subjects` (covers `*.localhost`) since it uses the internal CA, not a public one.
+`syncPublicSubjects` rebuilds that allowlist from the live `@stacks` routes after every deploy and teardown, so it always tracks what's deployed. Route matchers are stored with the cluster TLD stripped, so each one is turned back into its FQDN (`<matcher><clusterTld>`, via `@vars.clusterTld`) before being allowed. A hostname not backed by a deployed route matches nothing and never opens an order.
+
+- **The sentinel.** `publicAllowlistSentinel` (`_rig-public-allowlist-sentinel.localhost`) keeps the list non-empty when nothing public is deployed, so it can't collapse back to match-all. It sits under `.localhost`, so the internal policy claims it first -- it can't trigger a public order itself.
+- **`automatic_https.disable_certificates` on `@stacks`.** Route matchers are TLD-stripped (`app.r33`, not `app.r33.dev.example.com`) and aren't real public names, so Caddy's managed-cert pass shouldn't try to provision for them. Public certs come from the on-demand allowlist instead.
+- **The permission endpoint stays permissive by design.** It reads back the admin config and answers `200` for everything, but it's only consulted for an SNI that already matched a scoped on-demand policy, so an unknown name never reaches it. Tightening it to a real deny-by-default handler would be belt-and-suspenders.
+
+Clusters initialized before this change need a `rig caddy init` re-run to pick up the scoped policy -- `syncPublicSubjects` is a no-op until `@ondemand-subjects` exists. Pair it with ZeroSSL (above) so the allowlisted issuance also dodges Let's Encrypt's rate limits. Keep `@ondemand-internal-subjects` (covers `*.localhost`) as-is; it uses the internal CA, not a public one.
 
 ## Custom build
 

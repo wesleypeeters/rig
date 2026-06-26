@@ -56,6 +56,27 @@ CI=true rig validate
 
 Note that the stack environment only specifies which configuration to use -- it doesn't control where the stack is going to be deployed. That's controlled by the `DOCKER_HOST` environment variable or `docker context use`. Typically you won't be performing remote cluster deployments locally as that's what CI is for.
 
+### Commands
+
+Run `rig` with no arguments for the full list. In brief:
+
+| Command | What it does |
+|---------|--------------|
+| `rig deploy [await]` | Deploy the stack to the swarm and configure Caddy routes |
+| `rig rm [await]` | Remove the stack from the swarm and Caddy |
+| `rig build` | Build images via `docker buildx bake` and lock digests |
+| `rig config` / `rig json` | Output the merged, interpolated stack as YAML / JSON |
+| `rig validate` | Validate the stack against governance rules |
+| `rig show` | Interactive overview of running services |
+| `rig debug <service>` / `rig exec <service> ...` | Shell into / run a command in a running container |
+| `rig run <service> ...` | Run a fresh container from a service image (cwd at `/project`) |
+| `rig cleanup` | Remove stale review environments |
+| `rig rollback` | Redeploy from a previous digest lockfile |
+| `rig update` | Pull the latest rig and rebuild Caddy |
+| `rig network <name>` | Create a swarm-scoped overlay network |
+| `rig dir <stack>` | Print the source directory recorded for a deployed stack |
+| `rig caddy init\|trust\|tld\|log` | Manage the Caddy reverse proxy |
+
 ## Docs
 
 - [Getting started](docs/01-getting-started.md) -- from zero to first deployment
@@ -63,7 +84,7 @@ Note that the stack environment only specifies which configuration to use -- it 
 - [Review environments](docs/03-review-environments.md) -- per-PR deployments with GitHub Actions
 - [Cluster setup](docs/04-cluster-setup.md) -- setting up a new Swarm cluster
 - [Caddy integration](docs/05-caddy-integration.md) -- reverse proxy internals and troubleshooting
-- [Advanced topics](docs/06-advanced-topics.md) -- force-restart, short-running jobs, tuning, exec access
+- [Advanced topics](docs/06-advanced-topics.md) -- force-restart, short-running jobs, tuning, exec/run access, shared networks, ingress IP exhaustion
 - [Special variables](docs/07-special-variables.md) -- injected environment variables reference
 - [FAQ](docs/08-faq.md) -- common questions answered
 

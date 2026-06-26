@@ -6,7 +6,7 @@ import { optional } from "../util/env.ts";
 import { ciMode } from "../constants.ts";
 
 const hostnameRegex = /^(?!-)[a-z\d-]{1,63}(?<!-)(\.(?!-)[a-z\d-]{1,63}(?<!-))*$/;
-const validAccess = new Set(["internal", "local", "private", "public"]);
+const validAccess = new Set(["internal", "local", "none", "private", "public"]);
 const validCsp = new Set(["mandatory", "optional"]);
 
 function validate({ services, ["x-rig"]: { routes } }: StackYml) {

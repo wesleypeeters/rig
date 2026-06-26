@@ -1,4 +1,5 @@
 import caddyFetch from "./fetch.ts";
+import buildStripRegex from "./stripRegex.ts";
 import { defaultOnDemandInternalSubjects, publicAllowlistSentinel } from "./tls.ts";
 import fatalError from "../util/fatal.ts";
 import info from "../util/info.ts";
@@ -6,17 +7,7 @@ import info from "../util/info.ts";
 const clusterTld = Deno.args[2] || ".localhost";
 const privateSubnet = Deno.args.find(a => a.startsWith("--private-subnet="))?.split("=")[1] || null;
 
-// Build the strip regex from the cluster TLD.
-// Strips the TLD suffix from the Host header so route matchers see clean hostnames.
-// Examples:
-//   .localhost              -> (.+)\.localhost$
-//   .dev.example.com        -> (.+)\.dev\.example\.com$
-//   .devhost                -> (.+)\.\w*host$
-const escapedTld = clusterTld.slice(1).replace(/\./g, "\\.");
-const isHostTld = clusterTld.endsWith("host");
-const stripRegex = isHostTld
-	? "(.+)\\.\\w*host$"
-	: `(.+)\\.${escapedTld}$`;
+const stripRegex = buildStripRegex(clusterTld);
 
 const onDemandInternalSubjectsTlsPolicy = {
 	"@id": "@ondemand-internal-subjects",

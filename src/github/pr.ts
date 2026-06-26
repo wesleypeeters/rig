@@ -1,5 +1,6 @@
 import $ from "@david/dax";
 import slugify from "../util/slugify.ts";
+import parsePrNumber from "./parsePrNumber.ts";
 import { optional } from "../util/env.ts";
 
 const { GITHUB_ACTIONS, GITHUB_HEAD_REF, GITHUB_REF_NAME, GITHUB_REF, GITHUB_EVENT_PATH } = optional;
@@ -14,9 +15,7 @@ if (GITHUB_ACTIONS) {
 	// Read the event payload for PR number and default branch.
 	const event = JSON.parse(await Deno.readTextFile(GITHUB_EVENT_PATH!));
 	_defaultBranch = event.repository?.default_branch ?? "main";
-	_prNumber = event.pull_request?.number
-		?? (GITHUB_REF?.match(/^refs\/pull\/(\d+)\/merge$/)?.[1] ? Number(RegExp.$1) : null)
-		?? (event.inputs?.pr_number ? Number(event.inputs.pr_number) : null);
+	_prNumber = parsePrNumber(event, GITHUB_REF);
 } else {
 	_currentBranch = await $`git rev-parse --abbrev-ref HEAD`.text();
 	_defaultBranch = await $`git symbolic-ref refs/remotes/origin/HEAD`.noThrow().stderr("null").text()

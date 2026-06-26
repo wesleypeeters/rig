@@ -2,6 +2,12 @@
 
 A wrapper around `docker stack`, `docker buildx bake` and Caddy for deploying and managing stacks on Docker Swarm clusters. Works locally and in CI, so the workflow on your machine is representative of what happens on the cluster.
 
+## Why I built this
+
+I wanted PaaS ergonomics on hardware I already run — push a branch and get a deployment with working HTTPS, open a PR and get a throwaway review environment that cleans itself up when the PR closes — without renting a platform or taking on Kubernetes. Docker Swarm already does the hard part of scheduling containers across nodes; what was missing was the glue around it. `rig` is that glue: it wraps `docker stack`, `docker buildx bake` and Caddy behind one command so deploying is a single step, routes and TLS are configured for you, and review environments come for free.
+
+The thing I cared about most is that local and CI run the same code path. `rig deploy` on my laptop does exactly what CI does -- the only difference is where `DOCKER_HOST` points -- so I can reproduce a cluster deploy locally instead of debugging it through a CI dashboard. CI mode just layers on the governance rules (no host-mounted volumes, no directly published ports) that keep stacks isolated from each other on a shared cluster.
+
 ## How to use
 
 ### Prerequisites
@@ -100,7 +106,7 @@ The `dev` task watches for changes and reruns tests automatically:
 deno task dev
 ```
 
-The `test` task runs all tests and writes a code coverage report to `out/coverage`.
+The `test` task runs all tests and writes a code coverage report to `out/coverage`. Tests live alongside the code they cover as `*.test.ts` files.
 
 ## License
 

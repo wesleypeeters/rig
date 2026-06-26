@@ -1,14 +1,16 @@
 import type { Routes } from "../stack/types.ts";
-import { prNumber } from "../github/pr.ts";
 import { optional } from "../util/env.ts";
-import caddyApiFetch from "./api.ts";
-import id from "../stack/id.ts";
 
-const vars = id === "caddy" ? {} : (await caddyApiFetch("get", "@vars") || {});
-const privateSubnet: string[] | undefined = vars.privateSubnet?.split(",");
+export type CaddyStackConfigDeps = {
+	// VPN subnet ranges that gate `access: private` routes. When undefined (no
+	// subnet configured on the cluster) private routes get no IP restriction.
+	privateSubnet?: string[];
+	// Review-environment PR number; when set, route hosts are suffixed with .r<n>.
+	prNumber: number | null;
+};
 
-export function createCaddyStackConfig(stackId: string, routes: Routes, portRangeId: number) {
-	const caddyRoutes: any[] = Object.entries(routes).flatMap(([hosts, subroutes]) => {
+export function createCaddyStackConfig(stackId: string, routes: Routes, portRangeId: number, { privateSubnet, prNumber }: CaddyStackConfigDeps) {
+	const caddyRoutes: any[] = Object.entries(routes).flatMap(([hosts, subroutes]): any[] => {
 		const isPrivate = privateSubnet && Object.values(subroutes).some(r => r.access === "private");
 		const handle = Object.entries(subroutes).map(([_path, { target }]) => {
 			const hostHeader = ["{http.vars.requestHost}"];

@@ -18,6 +18,7 @@ import id from "../stack/id.ts";
 import type { Stack } from "../stack/types.ts";
 import { encodeBase58 } from "@std/encoding/base58";
 import { createCaddyStackConfig } from "../caddy/routes.ts";
+import { prNumber } from "../github/pr.ts";
 import syncPublicSubjects from "../caddy/syncPublicSubjects.ts";
 import { portRangeLength, getRangeFirstPort, findNextPortRangeId } from "../stack/ports.ts";
 
@@ -80,7 +81,9 @@ async function deployCaddyStack(servicePorts: string[], confirmedPortRangeId?: n
 		}));
 	}
 	const [method, objectUrl] = stackExists ? ["patch", id] : ["post", "@stacks/routes"];
-	await caddyApiFetch(method, objectUrl, createCaddyStackConfig(id, routes, confirmedPortRangeId!));
+	const vars = await caddyApiFetch("get", "@vars") || {};
+	const privateSubnet: string[] | undefined = vars.privateSubnet?.split(",");
+	await caddyApiFetch(method, objectUrl, createCaddyStackConfig(id, routes, confirmedPortRangeId!, { privateSubnet, prNumber }));
 	if (confirmedPortRangeId !== portRangeId) {
 		if (portRangeId !== undefined && !confirmedPortRangeId) {
 			await caddyApiFetch("delete", String(portRangeId));

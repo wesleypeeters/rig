@@ -7,4 +7,5 @@ if (!service) fatalError("Usage: rig debug <service>");
 
 const { containerId, dockerHost } = await findContainer(service);
 if (dockerHost) Deno.env.set("DOCKER_HOST", dockerHost);
-await $`docker debug ${containerId}`;
+const { code } = await $`docker debug ${containerId}`.noThrow();
+Deno.exit(code);

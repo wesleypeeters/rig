@@ -10,4 +10,5 @@ if (!stack.services?.[service]) fatalError(`Service "${service}" not found in st
 
 const args = Deno.args.slice(2);
 const tag = getServiceTag(service);
-await $`docker run -it --rm -v ${Deno.cwd()}:/project ${tag} ${args}`;
+const { code } = await $`docker run -it --rm -v ${Deno.cwd()}:/project ${tag} ${args}`.noThrow();
+Deno.exit(code);

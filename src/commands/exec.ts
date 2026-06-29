@@ -10,4 +10,7 @@ if (!cmd.length) fatalError("No command specified");
 
 const { containerId, dockerHost } = await findContainer(service);
 if (dockerHost) Deno.env.set("DOCKER_HOST", dockerHost);
-await $`docker exec -it ${containerId} ${cmd}`;
+// noThrow + propagate the exit code: a non-zero command (or `exit 1` from a
+// shell) should set rig's exit code, not dump a dax stack trace.
+const { code } = await $`docker exec -it ${containerId} ${cmd}`.noThrow();
+Deno.exit(code);

@@ -4,8 +4,12 @@ import info from "../util/info.ts";
 import fatalError from "../util/fatal.ts";
 import { optional } from "../util/env.ts";
 
+// Go-template --format strings must be quoted. dax shell-parses the static text
+// of a template literal and rejects the braces (and the tab below) as
+// unexpected characters; quoting passes them through to docker verbatim.
+
 async function findRunningTask(service: string) {
-	const out = await $`docker service ps ${id}_${service} --filter desired-state=running --format {{.ID}}\t{{.Node}} --no-trunc`.noThrow().text();
+	const out = await $`docker service ps ${id}_${service} --filter desired-state=running --format "{{.ID}}\t{{.Node}}" --no-trunc`.noThrow().text();
 	const line = out.trim().split("\n").filter(Boolean)[0];
 	if (!line) return null;
 	const [taskId, node] = line.split("\t");
@@ -13,7 +17,7 @@ async function findRunningTask(service: string) {
 }
 
 async function getContainerId(taskId: string) {
-	const out = await $`docker inspect ${taskId} --format {{.Status.ContainerStatus.ContainerID}}`.noThrow().text();
+	const out = await $`docker inspect ${taskId} --format "{{.Status.ContainerStatus.ContainerID}}"`.noThrow().text();
 	return out.trim();
 }
 
@@ -30,10 +34,10 @@ export default async function (service: string): Promise<ContainerLocation> {
 	}
 	const containerId = await getContainerId(task.taskId);
 	if (!containerId) fatalError(`Container for ${service} task not yet assigned`);
-	const localNode = (await $`docker info --format {{.Name}}`.text()).trim();
+	const localNode = (await $`docker info --format "{{.Name}}"`.text()).trim();
 	if (task.node === localNode) return { containerId };
 	const remoteNode = task.node;
-	const ip = (await $`docker node inspect ${remoteNode} --format {{.Status.Addr}}`.text()).trim();
+	const ip = (await $`docker node inspect ${remoteNode} --format "{{.Status.Addr}}"`.text()).trim();
 	const sshUser = optional.CLUSTER_SSH_USER || optional.USER;
 	if (!sshUser) fatalError("CLUSTER_SSH_USER must be set to reach remote node");
 	info(`Container is on remote node ${remoteNode}, tunneling via SSH...`);

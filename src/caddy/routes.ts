@@ -7,9 +7,12 @@ export type CaddyStackConfigDeps = {
 	privateSubnet?: string[];
 	// Review-environment PR number; when set, route hosts are suffixed with .r<n>.
 	prNumber: number | null;
+	// Stable `service:port` -> range-offset map, persisted so a service keeps its
+	// ingress port across redeploys even as other routes are added or removed.
+	portAssignments?: Record<string, number>;
 };
 
-export function createCaddyStackConfig(stackId: string, routes: Routes, portRangeId: number, { privateSubnet, prNumber }: CaddyStackConfigDeps) {
+export function createCaddyStackConfig(stackId: string, routes: Routes, portRangeId: number, { privateSubnet, prNumber, portAssignments }: CaddyStackConfigDeps) {
 	const caddyRoutes: any[] = Object.entries(routes).flatMap(([hosts, subroutes]): any[] => {
 		const isPrivate = privateSubnet && Object.values(subroutes).some(r => r.access === "private");
 		const handle = Object.entries(subroutes).map(([_path, { target }]) => {
@@ -58,7 +61,8 @@ export function createCaddyStackConfig(stackId: string, routes: Routes, portRang
 				handler: "vars",
 				repository: optional.GITHUB_REPOSITORY || null,
 				directory: Deno.cwd(),
-				portRangeId
+				portRangeId,
+				portAssignments: portAssignments ?? {}
 			},
 			...caddyRoutes.length ? [{
 				handler: "subroute",

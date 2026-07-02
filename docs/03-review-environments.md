@@ -122,7 +122,7 @@ ssh-keygen -t ed25519 -f rig-deploy -N ""
 
 ## GitHub Environments
 
-The `environment:` key in the workflow creates entries in your repo's Environments tab. The URL shows up as a clickable link on the PR. The action updates deployment status automatically.
+The `environment:` key in the workflow creates entries in your repo's Environments tab. The URL shows up as a clickable link on the PR. GitHub Actions updates the deployment status automatically.
 
 ## Cleanup
 

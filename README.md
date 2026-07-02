@@ -8,6 +8,43 @@ I wanted PaaS ergonomics on hardware I already run — push a branch and get a d
 
 The thing I cared about most is that local and CI run the same code path. `rig deploy` on my laptop does exactly what CI does -- the only difference is where `DOCKER_HOST` points -- so I can reproduce a cluster deploy locally instead of debugging it through a CI dashboard. CI mode just layers on the governance rules (no host-mounted volumes, no directly published ports) that keep stacks isolated from each other on a shared cluster.
 
+## How it works
+
+One Caddy instance fronts the whole cluster. `rig deploy` does two things: it deploys your stack to Swarm with each routed service published on a host port allocated from the stack's own 10-port range, and it configures Caddy through its admin API to terminate TLS and proxy each route to that port. Stacks keep their isolated overlay networks -- services never join a shared network and don't know Caddy exists.
+
+```
+rig deploy ──┬──▶ docker stack deploy     each routed service published on a
+             │                            port from the stack's 10-port range
+             └──▶ Caddy admin API         routes, TLS allowlist, stack metadata
+
+
+        https://myapp.r42.dev.example.com
+                       │
+                       ▼
+       ┌────────────────────────────────┐
+       │  Caddy  :443                   │
+       │    capture original host       │
+       │    strip cluster TLD ──────────┼──  myapp.r42.dev.example.com
+       │    http cache (opt-in)         │                  └──▶ myapp.r42
+       │    match host ──▶ stack route  │
+       │    reverse_proxy ──────────────┼──▶ host:49163 (stack's port range)
+       └───────────────┬────────────────┘
+                       │
+                       ▼
+       ┌────────────────────────────────┐
+       │  Swarm ingress                 │    published port ──▶ service VIP
+       └───────────────┬────────────────┘
+                       │
+                       ▼
+       ┌────────────────────────────────┐
+       │  myapp_r42 stack               │
+       │    overlay network, isolated   │
+       │    api task listening on 3000  │
+       └────────────────────────────────┘
+```
+
+The reverse proxy restores the original Host header before forwarding, so upstream services see the real hostname. Port ranges, route config, and per-stack metadata all live in Caddy's config store -- there's no separate state database. Details in [Caddy integration](docs/05-caddy-integration.md).
+
 ## How to use
 
 ### Prerequisites

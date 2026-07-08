@@ -81,7 +81,7 @@ rig
 
 The `rig` command looks in the current directory for `stack.yml`. This file is interpreted as a Docker Swarm stack definition. The `rig` command expects an extension section named `x-rig` which must specify a `name` property. For more detailed information about specifying stacks and routes, have a look at the [docs](docs/).
 
-The subcommands can run in two modes: `local` (default) or `ci`. Depending on the mode the `local.stack.yml` or `ci.stack.yml` file (if it exists) will be merged into the `stack.yml` file. CI mode enforces cluster governance rules.
+The subcommands can run in two modes: `local` (default) or `ci`. Depending on the mode the `local.stack.yml` or `ci.stack.yml` file (if it exists) will be merged into the `stack.yml` file. In CI mode, a cluster-specific `<cluster>.stack.yml` (matching the `CLUSTER` env var) is merged **instead of** `ci.stack.yml` when it exists — clusters without one fall back to `ci.stack.yml` as before. CI mode enforces cluster governance rules.
 
 To deploy a stack locally:
 

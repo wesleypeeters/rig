@@ -6,8 +6,11 @@ This tool expects [standard Docker Swarm stack definitions](https://docs.docker.
 - `stack.override.yml` is useful for extending deep-cloned structures
 - `local.stack.yml` will be merged in `local` mode if it exists (also `local.stack.override.yml`)
 - `ci.stack.yml` will be merged in `ci` mode if it exists (also `ci.stack.override.yml`)
+- `<cluster>.stack.yml` (e.g. `dev.stack.yml`) will be merged **instead of** `ci.stack.yml` when deploying in `ci` mode with `CLUSTER=<cluster>` and the file exists (also `<cluster>.stack.override.yml`)
 
 You should only define things in `local` that you don't want in `ci` mode. Accordingly, you should only define things in `ci` that you don't want in `local` mode.
+
+Cluster-specific overlays let one repo ship a different service set per cluster — for example a staging cluster that swaps the real mail infrastructure for a Mailpit sandbox while `ci.stack.yml` keeps serving production. Because Compose merging can only add or override (never remove) services, the cluster file *replaces* the CI overlay rather than layering on top of it: duplicate what the cluster shares with `ci.stack.yml`, change what differs. This is fully backwards compatible — clusters without a dedicated file (and deploys where `CLUSTER` is unset) keep merging `ci.stack.yml` exactly as before.
 
 For example, placement constraints should likely only apply to `ci` mode and host-mounted volumes should only ever be used in `local` mode as those aren't allowed in `ci` mode.
 

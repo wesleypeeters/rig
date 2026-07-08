@@ -32,6 +32,22 @@ function createTargetUrl(route: string | number | null, host: string) {
 }
 
 const parsed = parseYaml(await config(ymlFiles)) as StackYml;
+// `docker stack config` strips x-* extensions from every file after the
+// first, so x-rig config declared in an overlay (e.g. a mailpit route in
+// local.stack.yml) never survives the merge. Re-merge x-rig from the raw
+// input files ourselves: later files win per key, routes merge per host.
+// Note: overlay x-rig values skip docker's env interpolation — keep them
+// literal.
+for (const file of ymlFiles.slice(1)) {
+	const doc = parseYaml(await Deno.readTextFile(file)) as StackYml | null;
+	const ext = doc?.["x-rig"];
+	if (!ext) continue;
+	parsed["x-rig"] = {
+		...(parsed["x-rig"] ?? {}),
+		...ext,
+		routes: { ...(parsed["x-rig"]?.routes ?? {}), ...(ext.routes ?? {}) }
+	} as StackYml["x-rig"];
+}
 keys(parsed.services).some(s => s.includes(".")) && fatalError("Using '.' character in service name not allowed.");
 values(parsed.services).filter(s => s.environment).forEach(({ environment }) => {
 	entries(environment!).forEach(([key, value]) => (value === null) && delete environment![key]);

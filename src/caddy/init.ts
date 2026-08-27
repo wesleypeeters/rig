@@ -6,6 +6,10 @@ import info from "../util/info.ts";
 
 const clusterTld = Deno.args[2] || ".localhost";
 const privateSubnet = Deno.args.find(a => a.startsWith("--private-subnet="))?.split("=")[1] || null;
+// An application on this cluster can vouch for hostnames rig cannot infer from
+// a route matcher — a per-customer `cdn.<domain>` served by one shared route,
+// for instance. See syncPublicSubjects: the list stays explicit either way.
+const extraSubjectsUrl = Deno.args.find(a => a.startsWith("--extra-subjects-url="))?.split("=").slice(1).join("=") || null;
 
 const stripRegex = buildStripRegex(clusterTld);
 
@@ -73,7 +77,8 @@ const globalVarsHandler = {
 	requestHost: "{http.request.host}",
 	portRanges: [],
 	clusterTld,
-	...(privateSubnet ? { privateSubnet } : {})
+	...(privateSubnet ? { privateSubnet } : {}),
+	...(extraSubjectsUrl ? { extraSubjectsUrl } : {})
 };
 
 const wildcardsMatcher = {

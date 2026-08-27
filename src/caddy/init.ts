@@ -1,6 +1,7 @@
 import caddyFetch from "./fetch.ts";
 import buildStripRegex from "./stripRegex.ts";
 import { defaultOnDemandInternalSubjects, publicAllowlistSentinel } from "./tls.ts";
+import { customisedRigPolicies, foreignPolicies, foreignVars, mergePolicies } from "./ownership.ts";
 import fatalError from "../util/fatal.ts";
 import info from "../util/info.ts";
 
@@ -10,6 +11,7 @@ const privateSubnet = Deno.args.find(a => a.startsWith("--private-subnet="))?.sp
 // a route matcher — a per-customer `cdn.<domain>` served by one shared route,
 // for instance. See syncPublicSubjects: the list stays explicit either way.
 const extraSubjectsUrl = Deno.args.find(a => a.startsWith("--extra-subjects-url="))?.split("=").slice(1).join("=") || null;
+const force = Deno.args.includes("--force");
 
 const stripRegex = buildStripRegex(clusterTld);
 
@@ -161,6 +163,61 @@ const config = {
 	}
 };
 
+// `POST /load` replaces the ENTIRE config, which is right on an empty cluster
+// and destructive on a live one — Caddy config is shared with humans. Read what
+// is there first and reconcile against it. See ownership.ts for the two rules.
+const existingResponse = await caddyFetch("get", "config/");
+let existingConfig: any = null;
+try {
+	existingConfig = existingResponse.ok ? JSON.parse(existingResponse.body || "null") : null;
+} catch {
+	existingConfig = null;
+}
+
+if (existingConfig?.apps?.tls || existingConfig?.apps?.http) {
+	const existingPolicies = existingConfig?.apps?.tls?.automation?.policies ?? [];
+	const desiredPolicies = config.apps.tls.automation.policies;
+
+	// REFUSE: rig's own objects that a human has changed. Overwriting these
+	// resolves a disagreement by force, so make it a decision, not a side effect.
+	const customised = customisedRigPolicies(existingPolicies, desiredPolicies);
+	if (customised.length && !force) {
+		fatalError(
+			`This cluster's Caddy config has been edited since it was initialised:\n` +
+			customised.map(c => `  - ${c}`).join("\n") +
+			`\n\nRe-initialising would replace those with rig's defaults. On a live cluster that ` +
+			`can stop certificates renewing.\nRe-run with --force if that is genuinely what you want.`
+		);
+	}
+
+	// PRESERVE: objects rig never authored. It has no opinion about them, so
+	// removing them was never intentional — only careless.
+	const foreign = foreignPolicies(existingPolicies);
+	if (foreign.length) {
+		info(`Preserving ${foreign.length} automation polic${foreign.length === 1 ? "y" : "ies"} rig did not create: ${foreign.map((p: any) => p["@id"]).join(", ")}`);
+	}
+	config.apps.tls.automation.policies = mergePolicies(existingPolicies, desiredPolicies) as typeof desiredPolicies;
+
+	const carriedVars = foreignVars(findVars(existingConfig));
+	if (Object.keys(carriedVars).length) {
+		info(`Preserving @vars set outside rig: ${Object.keys(carriedVars).join(", ")}`);
+		Object.assign(globalVarsHandler, carriedVars);
+	}
+
+	if (customised.length) info(`--force: replacing ${customised.length} edited rig object(s)`);
+}
+
 const response = await caddyFetch("post", "load", JSON.stringify(config));
 response.ok || fatalError(JSON.parse(response.body).error);
 info(`Caddy initialized with TLD ${clusterTld}${privateSubnet ? ` (private subnet: ${privateSubnet})` : ""}`);
+
+/** The `@vars` handler, wherever it sits in the existing route tree. */
+function findVars(cfg: any): Record<string, unknown> {
+	const routes = cfg?.apps?.http?.servers?.srv0?.routes ?? [];
+	for (const route of routes) {
+		for (const handler of route?.handle ?? []) {
+			if (handler?.["@id"] === "@vars") return handler;
+		}
+	}
+	return {};
+}

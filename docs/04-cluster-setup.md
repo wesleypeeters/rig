@@ -58,6 +58,13 @@ rig caddy init .dev.example.com   # use your cluster's TLD
 rig caddy init .dev.example.com --private-subnet=10.0.0.0/24   # with VPN subnet
 ```
 
+On an **already-running** cluster, `init` reconciles rather than replaces: it preserves
+automation policies and `@vars` keys it didn't author, and refuses if one of its own objects
+has been edited (`--force` overrides). See `05-caddy-integration.md`.
+
+```
+```
+
 The TLD argument tells Caddy how to strip the cluster-specific suffix from incoming hostnames so upstream services get clean host headers. The optional `--private-subnet` flag configures which IP range is allowed to access routes marked `access: private` (e.g. your VPN subnet). Multiple subnets can be comma-separated. See [Caddy integration](05-caddy-integration.md) for details.
 
 ## DNS

@@ -154,6 +154,37 @@ Public certs are issued on-demand, but only for the hostnames rig is actually se
 
 Clusters initialized before this change need a `rig caddy init` re-run to pick up the scoped policy -- `syncPublicSubjects` is a no-op until `@ondemand-subjects` exists. Pair it with ZeroSSL (above) so the allowlisted issuance also dodges Let's Encrypt's rate limits. Keep `@ondemand-internal-subjects` (covers `*.localhost`) as-is; it uses the internal CA, not a public one.
 
+## What `init` owns, and what it leaves alone
+
+`rig caddy init` writes the whole config with one `POST /load`. That is right on an empty cluster and destructive on a live one, because Caddy config is shared with humans: a cluster acquires automation policies for names rig never hears about, DNS-01 issuers rig's defaults don't include, and `@vars` keys set by hand. Re-running init used to replace all of it silently, and nothing said so until certificates stopped renewing.
+
+Two rules now apply, and the difference between them matters:
+
+- **Foreign objects are preserved.** An automation policy whose `@id` rig didn't author is kept, in the position it already occupies -- order is load-bearing, since Caddy takes the first policy whose subjects match. Same for `@vars` keys rig doesn't set.
+- **Rig's own objects that were edited cause a refusal.** Here rig has an opinion and it conflicts with a human's. `init` prints which fields differ and stops. `--force` is how the human wins.
+
+Preserving can't cover the second case: a customised `@ondemand-subjects` is rig's object, so nothing about its identity marks it as somebody's work -- only comparing it to the default reveals that.
+
+Fields rig rewrites at runtime (`subjects`, which `syncPublicSubjects` rebuilds every deploy) are excluded from the comparison. Including them would make every established cluster look edited and train people to pass `--force`, defeating the check.
+
+```
+$ rig caddy init .dev.example.com
+Fatal: This cluster's Caddy config has been edited since it was initialised:
+  - @ondemand-subjects.issuers
+
+Re-initialising would replace those with rig's defaults. On a live cluster that
+can stop certificates renewing.
+Re-run with --force if that is genuinely what you want.
+```
+
+## Vouching for hostnames a route matcher can't express
+
+Some hosts are per-tenant and served by one route -- `cdn.<customer-domain>` proxied to the same backend as every other. `syncPublicSubjects` derives the allowlist from deployed route matchers, and a matcher names the backend, not the hundred hostnames that reach it, so those names never make the list and their certificates are never issued.
+
+Dropping the `subjects` restriction to fix that is the one thing the allowlist exists to prevent. Instead, set `@vars.extraSubjectsUrl` to an endpoint returning `{"subjects": ["cdn.example.nl", ...]}`; `syncPublicSubjects` merges it into the list it already rebuilds. Entries are filtered to bare hostnames (a wildcard or a path can't reopen match-all through the back door) and capped. Every failure mode -- unreachable, non-2xx, unparseable, wrong shape -- leaves the deploy-derived list unchanged.
+
+Set it at init with `--extra-subjects-url=`, or on an existing cluster **seed it through the admin API rather than re-initialising**: `@vars` is only read during a deploy, so a seeded key survives every subsequent deploy, and only `init` rewrites it.
+
 ## Custom build
 
 The `caddy/Dockerfile` builds Caddy with these plugins:

@@ -97,6 +97,15 @@ const config = {
 		logs: {
 			default: {
 				"@id": "@log"
+			},
+			// Access log: one JSON line per request on stdout (`docker service logs
+			// caddy_caddy`), with client IP, host, path, status and user agent, so a
+			// cluster can answer "who is hitting us" without a proxy in front.
+			access: {
+				"@id": "@access-log",
+				writer: { output: "stdout" },
+				encoder: { format: "json" },
+				include: ["http.log.access"]
 			}
 		}
 	},
@@ -111,6 +120,7 @@ const config = {
 					// automatic HTTPS skip cert management for them; public certs are
 					// obtained on-demand against the FQDN allowlist instead.
 					automatic_https: { disable_certificates: true },
+					logs: { default_logger_name: "access" },
 					client_ip_headers: [
 						"CF-Connecting-IP",
 						"X-Real-IP",

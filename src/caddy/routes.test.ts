@@ -64,3 +64,13 @@ Deno.test("emits only the vars handler when there are no routes", () => {
 	assertEquals(config.handle.length, 1);
 	assertEquals(config.handle[0].handler, "vars");
 });
+
+Deno.test("an access: none route answers 403 and proxies nothing", () => {
+	const routes = { "old.example.com": { "/": route("none") } };
+	const config: any = createCaddyStackConfig("s", routes, undefined, { prNumber: null });
+	assertEquals(config.handle[1].routes, [{
+		handle: [{ handler: "static_response", status_code: "403", body: "Forbidden" }],
+		match: [{ host: ["old.example.com"] }],
+		terminal: true
+	}]);
+});

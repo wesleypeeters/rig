@@ -1,16 +1,19 @@
 import caddyApiFetch from "../caddy/api.ts";
+import caddyFetch from "../caddy/fetch.ts";
 import isDockerDesktop from "../docker/isDesktop.ts";
 import fatalError from "../util/fatal.ts";
 
 /*
- * Safe port ranges: 49152-65535.
- * We use 49160-65529 giving us 1636 neatly aligned 10-port ranges.
- * On Docker Desktop we avoid the ephemeral range to prevent conflicts.
+ * Each stack publishes its routed services on one 10-port range.
+ *
+ * Clusters use 49160-65529: 1637 aligned ranges inside the IANA dynamic range
+ * (49152-65535), clear of registered service ports. Docker Desktop and
+ * OrbStack use 45000-49149 instead, because macOS hands out 49152-65535 as
+ * ephemeral source ports and a clash there makes a publish fail.
  */
 export const portRangeLength = 10;
-export const [firstPort, lastPort] = isDockerDesktop ? [45000, 49150] : [49160, 65529];
-const nPorts = lastPort - firstPort + 1;
-const nPortRanges = nPorts / portRangeLength - 1;
+export const [firstPort, lastPort] = isDockerDesktop ? [45000, 49149] : [49160, 65529];
+const nPortRanges = Math.floor((lastPort - firstPort + 1) / portRangeLength);
 
 export function getRangeFirstPort(portRangeId: number) {
 	return firstPort + portRangeId * portRangeLength;
@@ -60,11 +63,28 @@ export function assignPortOffsets(
 	return offsets;
 }
 
-export async function findNextPortRangeId() {
+async function findFreePortRangeId() {
 	const portRanges: Array<{ ["@id"]: number }> = await caddyApiFetch("get", "@vars/portRanges");
 	const reserved = new Set(portRanges.map(o => o["@id"]));
 	for (let id = 0; id < nPortRanges; id++) {
 		if (!reserved.has(id)) return id;
 	}
 	fatalError("All port ranges are in use");
+}
+
+/**
+ * Reserve a free port range and return its id.
+ *
+ * Two deploys running at once can both see the same range as free. The claim
+ * is the POST itself: Caddy refuses a config holding a duplicate @id, so only
+ * one of them lands and the other looks again.
+ */
+export async function claimPortRange(): Promise<number> {
+	for (let attempt = 0; attempt < 10; attempt++) {
+		const id = await findFreePortRangeId();
+		const response = await caddyFetch("post", "id/@vars/portRanges", JSON.stringify({ "@id": id }));
+		if (response.ok) return id;
+		if (!response.body.includes("duplicate ID")) fatalError(`Could not reserve port range ${id}: ${response.body}`);
+	}
+	fatalError("Could not reserve a port range: too many concurrent deploys");
 }

@@ -12,7 +12,7 @@ export type CaddyStackConfigDeps = {
 	portAssignments?: Record<string, number>;
 };
 
-export function createCaddyStackConfig(stackId: string, routes: Routes, portRangeId: number, { privateSubnet, prNumber, portAssignments }: CaddyStackConfigDeps) {
+export function createCaddyStackConfig(stackId: string, routes: Routes, portRangeId: number | undefined, { privateSubnet, prNumber, portAssignments }: CaddyStackConfigDeps) {
 	const caddyRoutes: any[] = Object.entries(routes).flatMap(([hosts, subroutes]): any[] => {
 		const isPrivate = privateSubnet && Object.values(subroutes).some(r => r.access === "private");
 		const handle = Object.entries(subroutes).map(([_path, { target }]) => {
@@ -32,6 +32,14 @@ export function createCaddyStackConfig(stackId: string, routes: Routes, portRang
 		});
 		const hostMatchers = hosts.split(/\s+/);
 		const matchedHosts = prNumber ? hostMatchers.map(h => `${h}.r${prNumber}`) : hostMatchers;
+
+		if (Object.values(subroutes).every(r => r.access === "none")) {
+			return [{
+				handle: [{ handler: "static_response", status_code: "403", body: "Forbidden" }],
+				match: [{ host: matchedHosts }],
+				terminal: true
+			}];
+		}
 
 		if (isPrivate) {
 			return [

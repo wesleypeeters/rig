@@ -15,96 +15,103 @@ import lockFilePath from "../stack/lockfile.ts";
 import stack from "../stack/parsed.ts";
 import "../stack/name.ts";
 import id from "../stack/id.ts";
-import type { Stack } from "../stack/types.ts";
+import type { RouteConfig } from "../stack/types.ts";
 import { encodeBase58 } from "@std/encoding/base58";
 import { createCaddyStackConfig } from "../caddy/routes.ts";
 import { prNumber } from "../github/pr.ts";
 import syncPublicSubjects from "../caddy/syncPublicSubjects.ts";
-import { portRangeLength, getRangeFirstPort, findNextPortRangeId, assignPortOffsets } from "../stack/ports.ts";
+import { portRangeLength, getRangeFirstPort, claimPortRange, assignPortOffsets } from "../stack/ports.ts";
 
 const { routes } = stack["x-rig"];
+const { configs = {}, secrets = {}, services = {} } = stack;
+const files = [...Object.values(configs), ...Object.values(secrets)];
 
-function lockImages(services: Stack["services"], lock: Record<string, string>) {
-	for (const serviceName in services) {
-		const image = lock[serviceName];
-		if (!image) fatalError(`Image for ${serviceName} service not found in lockfile`);
-		services[serviceName].image = lock[serviceName];
-	}
+/** Routes that proxy to a service. An `access: none` route answers 403 itself. */
+function proxiedRoutes(): RouteConfig[] {
+	return Object.values(routes).flatMap(hostRoutes => Object.values(hostRoutes)).filter(r => r.access !== "none");
 }
 
 function getServicePorts() {
 	return dedupe(
-		Object.values(routes)
-			.map(hostRoutes => Object.values(hostRoutes))
-			.flat()
+		proxiedRoutes()
 			.map(({ target }) => target)
 			.filter(({ hostname }) => !hostname.includes("."))
 			.map(target => getCanonicalHost(target))
 	);
 }
 
-async function deploySwarmStack(servicePorts: string[], portOffsets: Record<string, number>, allocatedPortRangeId?: number) {
-	if (!(await exists(lockFilePath))) fatalError("Stack must be built before it can be deployed");
-	const { configs = {}, secrets = {}, services = {} } = stack;
-	lockImages(services, JSON.parse(await Deno.readTextFile(lockFilePath)));
-	if (servicePorts.length && allocatedPortRangeId !== undefined) {
-		const rangeFirstPort = getRangeFirstPort(allocatedPortRangeId);
-		servicePorts.forEach(servicePort => {
-			const [hostname, port] = servicePort.split(":", 2);
-			const service = services[hostname];
-			if (!service) fatalError(`Service "${hostname}" not found in stack`);
-			const ports = service.ports ??= [];
-			ports.push({ target: Number(port), published: rangeFirstPort + portOffsets[servicePort] });
-		});
+/**
+ * Everything that can fail on the stack's own inputs, checked before Caddy is
+ * touched: a deploy that stops halfway must not leave routes pointing at
+ * services that were never deployed.
+ */
+async function preflight(servicePorts: string[]) {
+	if (servicePorts.length > portRangeLength) fatalError(`A stack can't expose more than ${portRangeLength} ports`);
+	for (const servicePort of servicePorts) {
+		const [hostname] = servicePort.split(":", 1);
+		if (!services[hostname]) fatalError(`Service "${hostname}" not found in stack`);
 	}
-	const { values } = Object;
-	const files = [...values(configs), ...values(secrets)];
+	if (!hasKeys(services)) return;
+	if (!(await exists(lockFilePath))) fatalError("Stack must be built before it can be deployed");
+	const lock: Record<string, string> = JSON.parse(await Deno.readTextFile(lockFilePath));
+	for (const serviceName in services) {
+		if (!lock[serviceName]) fatalError(`Image for ${serviceName} service not found in lockfile`);
+		services[serviceName].image = lock[serviceName];
+	}
 	for (const f of files) {
 		if (!f["x-rig-env"]) continue;
 		if (ciMode) fatalError(`x-rig-env ${f["x-rig-env"]} not resolved in CI mode`);
 		if (!f.file) fatalError(`x-rig-env ${f["x-rig-env"]} not resolved and no file: fallback`);
 		delete f["x-rig-env"];
 	}
+}
+
+async function deploySwarmStack(servicePorts: string[], portOffsets: Record<string, number>, rangeId?: number) {
+	if (rangeId !== undefined) {
+		const rangeFirstPort = getRangeFirstPort(rangeId);
+		for (const servicePort of servicePorts) {
+			const [hostname, port] = servicePort.split(":", 2);
+			const ports = services[hostname].ports ??= [];
+			ports.push({ target: Number(port), published: rangeFirstPort + portOffsets[servicePort] });
+		}
+	}
 	const prefix = encodeBase58(id).slice(-11);
 	await processFiles(files, prefix);
-	values(services).forEach(s => delete s.build);
+	Object.values(services).forEach(s => {
+		delete s.build;
+		delete s.env_file;
+	});
 	info(`Deploying ${id} swarm stack...`);
 	await $`docker stack deploy -d=${!awaitMode} --prune --with-registry-auth -c - ${id}`.stdinText(JSON.stringify(stack));
 }
 
-async function deployCaddyStack(portOffsets: Record<string, number>, confirmedPortRangeId?: number) {
-	if (hasKeys(routes)) {
+async function deployCaddyStack(portOffsets: Record<string, number>, rangeId?: number) {
+	if (rangeId !== undefined) {
 		info(`Deploying ${id} caddy routes...`);
-		const rangeFirstPort = getRangeFirstPort(confirmedPortRangeId!);
-		Object.values(routes).forEach(subroutes => Object.values(subroutes).forEach(({ target }) => {
+		const rangeFirstPort = getRangeFirstPort(rangeId);
+		proxiedRoutes().forEach(({ target }) => {
 			target.host = `host:${rangeFirstPort + portOffsets[getCanonicalHost(target)]}`;
-		}));
+		});
 	}
 	const [method, objectUrl] = stackExists ? ["patch", id] : ["post", "@stacks/routes"];
 	const vars = await caddyApiFetch("get", "@vars") || {};
 	const privateSubnet: string[] | undefined = vars.privateSubnet?.split(",");
-	await caddyApiFetch(method, objectUrl, createCaddyStackConfig(id, routes, confirmedPortRangeId!, { privateSubnet, prNumber, portAssignments: portOffsets }));
-	if (confirmedPortRangeId !== portRangeId) {
-		if (portRangeId !== undefined && !confirmedPortRangeId) {
-			await caddyApiFetch("delete", String(portRangeId));
-		} else {
-			await caddyApiFetch("post", "@vars/portRanges", { "@id": confirmedPortRangeId });
-		}
-	}
+	await caddyApiFetch(method, objectUrl, createCaddyStackConfig(id, routes, rangeId, { privateSubnet, prNumber, portAssignments: portOffsets }));
+	// The stack no longer publishes anything: give its range back.
+	if (portRangeId !== undefined && rangeId === undefined) await caddyApiFetch("delete", String(portRangeId));
 }
 
 async function deploy() {
 	const servicePorts = getServicePorts();
-	if (servicePorts.length > portRangeLength) fatalError(`A stack can't expose more than ${portRangeLength} ports`);
-	const confirmedPortRangeId = servicePorts.length ? (portRangeId ?? await findNextPortRangeId()) : undefined;
+	await preflight(servicePorts);
+	const rangeId = servicePorts.length ? (portRangeId ?? await claimPortRange()) : undefined;
 	const portOffsets = assignPortOffsets(servicePorts, portAssignments);
 	if (id !== "caddy") {
-		await deployCaddyStack(portOffsets, confirmedPortRangeId!);
+		await deployCaddyStack(portOffsets, rangeId);
 		await syncPublicSubjects();
 	}
-	if (hasKeys(stack.services)) {
-		Object.values(stack.services).forEach(service => delete service.env_file);
-		await deploySwarmStack(servicePorts, portOffsets, confirmedPortRangeId!);
+	if (hasKeys(services)) {
+		await deploySwarmStack(servicePorts, portOffsets, rangeId);
 	} else if (stackExists) {
 		await removeSwarmStack(id);
 	}

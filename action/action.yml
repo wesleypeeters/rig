@@ -2,10 +2,10 @@ name: 'Rig Deploy'
 description: 'Docker Swarm deployment orchestrator with dynamic Caddy routing'
 inputs:
   command:
-    description: 'Command to run: build, deploy, rm, cleanup'
+    description: 'Command to run: build, deploy, rm or cleanup'
     required: true
   cluster:
-    description: 'Target cluster'
+    description: 'Target cluster; selects <cluster>.stack.yml when it exists'
     required: false
     default: 'local'
   push:
@@ -20,6 +20,14 @@ inputs:
     description: 'Wait for convergence'
     required: false
     default: 'true'
+  github-token:
+    description: 'Token for ghcr.io (push and pull) and for reading PR state in cleanup'
+    required: false
+    default: ${{ github.token }}
+  lockfile-artifact:
+    description: 'Artifact that carries the lockfile from the build job to the deploy job'
+    required: false
+    default: 'rig-lockfile'
 runs:
   using: 'composite'
   steps:
@@ -27,18 +35,35 @@ runs:
       shell: bash
       run: ${{ github.action_path }}/scripts/setup.sh
       env:
-        CLUSTER: ${{ inputs.cluster }}
-        CLUSTER_SSH_KEY: ${{ env.CLUSTER_SSH_KEY }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
         CLUSTER_HOST: ${{ env.CLUSTER_HOST }}
-        GHCR_TOKEN: ${{ env.GHCR_TOKEN }}
-    - name: Execute
+        CLUSTER_SSH_USER: ${{ env.CLUSTER_SSH_USER }}
+        CLUSTER_SSH_KEY: ${{ env.CLUSTER_SSH_KEY }}
+        CLUSTER_KNOWN_HOSTS: ${{ env.CLUSTER_KNOWN_HOSTS }}
+    - name: Download lockfile
+      if: inputs.command == 'deploy'
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ inputs.lockfile-artifact }}
+        path: .rig/
+    - name: Run rig
       shell: bash
-      run: ${{ github.action_path }}/scripts/${{ inputs.command }}.sh
+      run: ${{ github.action_path }}/scripts/run.sh
       env:
+        COMMAND: ${{ inputs.command }}
         CLUSTER: ${{ inputs.cluster }}
         PUSH: ${{ inputs.push }}
         MAX_AGE: ${{ inputs.max-age }}
         AWAIT: ${{ inputs.await }}
-        REVIEW_ID: ${{ github.event.number }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
         CLUSTER_HOST: ${{ env.CLUSTER_HOST }}
         CLUSTER_SSH_USER: ${{ env.CLUSTER_SSH_USER }}
+    - name: Upload lockfile
+      if: inputs.command == 'build'
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.lockfile-artifact }}
+        path: .rig/*.json
+        include-hidden-files: true
+        if-no-files-found: error
+        overwrite: true

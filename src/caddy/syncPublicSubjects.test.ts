@@ -1,5 +1,5 @@
 import { assertEquals } from "@std/assert";
-import { fetchExtraSubjects } from "./syncPublicSubjects.ts";
+import { fetchExtraSubjects, routeSubjects } from "./syncPublicSubjects.ts";
 
 /**
  * The allowlist is a security boundary, not a convenience: an on-demand policy
@@ -78,4 +78,19 @@ Deno.test("caps the list so a compromised endpoint cannot flood it", async () =>
 	await withFetch(ok({ subjects: many }), async () => {
 		assertEquals((await fetchExtraSubjects("https://api.example/subjects")).length, 2000);
 	});
+});
+
+Deno.test("turns route matchers into FQDNs and skips wildcards", () => {
+	const server = {
+		routes: [
+			{ handle: [{ handler: "vars" }] },
+			{ handle: [{ handler: "vars" }, { handler: "subroute", routes: [
+				{ match: [{ host: ["app", "*.app"], remote_ip: {} }] },
+				{ match: [{ host: ["app"] }] }
+			] }] },
+			{ handle: [{ handler: "subroute", routes: [{ match: [{ host: ["api.r4"] }] }] }] }
+		]
+	};
+	assertEquals(routeSubjects(server, ".example.dev"), ["app.example.dev", "app.example.dev", "api.r4.example.dev"]);
+	assertEquals(routeSubjects(undefined, ".example.dev"), []);
 });

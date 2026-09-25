@@ -1,181 +1,26 @@
 import caddyFetch from "./fetch.ts";
-import buildStripRegex from "./stripRegex.ts";
-import { defaultOnDemandInternalSubjects, publicAllowlistSentinel } from "./tls.ts";
-import { customisedRigPolicies, foreignPolicies, foreignVars, mergePolicies } from "./ownership.ts";
+import buildBaseConfig from "./baseConfig.ts";
+import { findVars, reconcileConfig } from "./ownership.ts";
+import syncPublicSubjects from "./syncPublicSubjects.ts";
 import fatalError from "../util/fatal.ts";
 import info from "../util/info.ts";
 
-const clusterTld = Deno.args[2] || ".localhost";
-const privateSubnet = Deno.args.find(a => a.startsWith("--private-subnet="))?.split("=")[1] || null;
-// An application on this cluster can vouch for hostnames rig cannot infer from
-// a route matcher — a per-customer `cdn.<domain>` served by one shared route,
-// for instance. See syncPublicSubjects: the list stays explicit either way.
-const extraSubjectsUrl = Deno.args.find(a => a.startsWith("--extra-subjects-url="))?.split("=").slice(1).join("=") || null;
-const force = Deno.args.includes("--force");
+const args = Deno.args.slice(2);
 
-const stripRegex = buildStripRegex(clusterTld);
+/** `--name=value` → value, bare `--name` or `--name=` → "", absent → undefined. */
+function flag(name: string): string | undefined {
+	const arg = args.find(a => a === `--${name}` || a.startsWith(`--${name}=`));
+	return arg === undefined ? undefined : arg.slice(name.length + 3);
+}
 
-const onDemandInternalSubjectsTlsPolicy = {
-	"@id": "@ondemand-internal-subjects",
-	issuers: [{ module: "internal" }],
-	on_demand: true,
-	subjects: defaultOnDemandInternalSubjects
-};
-
-// Public ACME issuance is scoped to an explicit allowlist that rig keeps in
-// sync with the deployed stacks (see syncPublicSubjects). Without a subjects
-// list this policy matched every SNI, so any scanner spraying junk hostnames
-// at the cluster opened an ACME order per name and exhausted the Let's Encrypt
-// new-orders-per-account limit, starving real review envs of certs. The
-// sentinel keeps the list non-empty (empty == match all in Caddy).
-const onDemandSubjectsTlsPolicy = {
-	"@id": "@ondemand-subjects",
-	issuers: [{ module: "acme" }],
-	on_demand: true,
-	subjects: [publicAllowlistSentinel]
-};
-
-const internalSubjectsTlsPolicy = {
-	"@id": "@internal-subjects",
-	issuers: [{ module: "internal" }],
-	subjects: ["localhost"]
-};
-
-const initialLocalhostRoute = {
-	"@id": "localhost",
-	handle: [
-		{
-			body: "rig is running",
-			handler: "static_response"
-		}
-	],
-	match: [{ host: ["localhost", Deno.hostname()] }],
-	terminal: true
-};
-
-const stripHostHeaderHandler = {
-	handler: "headers",
-	request: {
-		replace: {
-			host: [{ search_regexp: stripRegex, replace: "$1" }]
-		}
-	}
-};
-
-// RFC 9111 conditional caching via Souin (Otter in-process backend).
-// Backends opt in by setting Cache-Control: public, max-age=... on responses.
-const cacheHandler = {
-	handler: "cache",
-	api: { souin: {} },
-	otter: { configuration: { size: 50000 } },
-	default_cache_control: "no-store",
-	ttl: "10s",
-	stale: "1h"
-};
-
-const globalVarsHandler = {
-	"@id": "@vars",
-	handler: "vars",
-	requestHost: "{http.request.host}",
-	portRanges: [],
-	clusterTld,
-	...(privateSubnet ? { privateSubnet } : {}),
-	...(extraSubjectsUrl ? { extraSubjectsUrl } : {})
-};
-
-const wildcardsMatcher = {
-	match: [
-		{
-			"@id": "@wildcards",
-			host: []
-		}
-	]
-};
-
-const config = {
-	logging: {
-		logs: {
-			default: {
-				"@id": "@log"
-			},
-			// Access log: one JSON line per request on stdout (`docker service logs
-			// caddy_caddy`), with client IP, host, path, status and user agent, so a
-			// cluster can answer "who is hitting us" without a proxy in front.
-			access: {
-				"@id": "@access-log",
-				writer: { output: "stdout" },
-				encoder: { format: "json" },
-				include: ["http.log.access"]
-			}
-		}
-	},
-	apps: {
-		http: {
-			servers: {
-				srv0: {
-					"@id": "@stacks",
-					listen: [":443"],
-					// Route matchers are registered with the TLD stripped (app.r33, not
-					// app.r33.reshark.dev), so they are not real public names. Let Caddy's
-					// automatic HTTPS skip cert management for them; public certs are
-					// obtained on-demand against the FQDN allowlist instead.
-					automatic_https: { disable_certificates: true },
-					logs: { default_logger_name: "access" },
-					client_ip_headers: [
-						"CF-Connecting-IP",
-						"X-Real-IP",
-						"X-Forwarded-For"
-					],
-					tls_connection_policies: [
-						{}
-					],
-					trusted_proxies: {
-						interval: "12h",
-						source: "cloudflare",
-						timeout: "15s"
-					},
-					trusted_proxies_strict: 1,
-					routes: [
-						{
-							handle: [
-								globalVarsHandler,
-								stripHostHeaderHandler,
-								cacheHandler
-							]
-						},
-						wildcardsMatcher,
-						initialLocalhostRoute
-					]
-				}
-			}
-		},
-		tls: {
-			automation: {
-				// This endpoint always answers 200 (it just reads back admin config),
-				// so it grants every request it sees. That is acceptable only because
-				// the on_demand policies above are scoped: ACME on_demand is gated by
-				// the FQDN allowlist and the internal one by *.localhost, so an
-				// unknown SNI never reaches this check. Tightening it to a real
-				// deny-by-default handler would be belt-and-suspenders.
-				on_demand: {
-					permission: {
-						module: "http",
-						endpoint: "http://127.0.0.1:2019/config/apps/tls/automation/on_demand/permission/endpoint"
-					}
-				},
-				policies: [
-					onDemandInternalSubjectsTlsPolicy,
-					internalSubjectsTlsPolicy,
-					onDemandSubjectsTlsPolicy,
-				]
-			}
-		}
-	}
-};
+const tldArg = args.find(a => !a.startsWith("--"));
+if (tldArg !== undefined && !/^\.[a-z\d-]+(\.[a-z\d-]+)*$/i.test(tldArg)) {
+	fatalError(`Invalid cluster TLD ${JSON.stringify(tldArg)}: expected a leading dot, e.g. .localhost or .dev.example.com`);
+}
 
 // `POST /load` replaces the ENTIRE config, which is right on an empty cluster
-// and destructive on a live one — Caddy config is shared with humans. Read what
-// is there first and reconcile against it. See ownership.ts for the two rules.
+// and destructive on a live one. Read what is there first and reconcile against
+// it; see ownership.ts for what is kept.
 const existingResponse = await caddyFetch("get", "config/");
 let existingConfig: any = null;
 try {
@@ -184,50 +29,32 @@ try {
 	existingConfig = null;
 }
 
-if (existingConfig?.apps?.tls || existingConfig?.apps?.http) {
-	const existingPolicies = existingConfig?.apps?.tls?.automation?.policies ?? [];
-	const desiredPolicies = config.apps.tls.automation.policies;
+// Anything not passed on the command line keeps its live value, so a re-init
+// can't silently reset the TLD, open up private routes by dropping the subnet,
+// or free port ranges that running stacks still hold. An explicit empty flag
+// (`--private-subnet=`) clears the value.
+const liveVars: Record<string, any> = findVars(existingConfig);
+const clusterTld: string = tldArg ?? liveVars.clusterTld ?? ".localhost";
+const privateSubnet: string | undefined = flag("private-subnet") ?? liveVars.privateSubnet;
+// An application on this cluster can vouch for hostnames rig cannot infer from
+// a route matcher — a per-customer `cdn.<domain>` served by one shared route,
+// for instance. See syncPublicSubjects: the list stays explicit either way.
+const extraSubjectsUrl: string | undefined = flag("extra-subjects-url") ?? liveVars.extraSubjectsUrl;
 
-	// REFUSE: rig's own objects that a human has changed. Overwriting these
-	// resolves a disagreement by force, so make it a decision, not a side effect.
-	const customised = customisedRigPolicies(existingPolicies, desiredPolicies);
-	if (customised.length && !force) {
-		fatalError(
-			`This cluster's Caddy config has been edited since it was initialised:\n` +
-			customised.map(c => `  - ${c}`).join("\n") +
-			`\n\nRe-initialising would replace those with rig's defaults. On a live cluster that ` +
-			`can stop certificates renewing.\nRe-run with --force if that is genuinely what you want.`
-		);
-	}
+const desired = buildBaseConfig({
+	clusterTld,
+	privateSubnet: privateSubnet || undefined,
+	extraSubjectsUrl: extraSubjectsUrl || undefined,
+	portRanges: Array.isArray(liveVars.portRanges) ? liveVars.portRanges : [],
+	hostname: Deno.hostname()
+});
 
-	// PRESERVE: objects rig never authored. It has no opinion about them, so
-	// removing them was never intentional — only careless.
-	const foreign = foreignPolicies(existingPolicies);
-	if (foreign.length) {
-		info(`Preserving ${foreign.length} automation polic${foreign.length === 1 ? "y" : "ies"} rig did not create: ${foreign.map((p: any) => p["@id"]).join(", ")}`);
-	}
-	config.apps.tls.automation.policies = mergePolicies(existingPolicies, desiredPolicies) as typeof desiredPolicies;
-
-	const carriedVars = foreignVars(findVars(existingConfig));
-	if (Object.keys(carriedVars).length) {
-		info(`Preserving @vars set outside rig: ${Object.keys(carriedVars).join(", ")}`);
-		Object.assign(globalVarsHandler, carriedVars);
-	}
-
-	if (customised.length) info(`--force: replacing ${customised.length} edited rig object(s)`);
-}
+const { config, notes } = reconcileConfig(existingConfig, desired, flag("force") !== undefined);
+notes.forEach(info);
 
 const response = await caddyFetch("post", "load", JSON.stringify(config));
-response.ok || fatalError(JSON.parse(response.body).error);
-info(`Caddy initialized with TLD ${clusterTld}${privateSubnet ? ` (private subnet: ${privateSubnet})` : ""}`);
+response.ok || fatalError(JSON.parse(response.body || "{}").error ?? `Caddy answered ${response.status}`);
 
-/** The `@vars` handler, wherever it sits in the existing route tree. */
-function findVars(cfg: any): Record<string, unknown> {
-	const routes = cfg?.apps?.http?.servers?.srv0?.routes ?? [];
-	for (const route of routes) {
-		for (const handler of route?.handle ?? []) {
-			if (handler?.["@id"] === "@vars") return handler;
-		}
-	}
-	return {};
-}
+// The allowlist was carried over as it was; rebuild it for the (possibly new) TLD.
+await syncPublicSubjects();
+info(`Caddy initialized with TLD ${clusterTld}${privateSubnet ? ` (private subnet: ${privateSubnet})` : ""}`);

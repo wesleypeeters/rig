@@ -140,3 +140,13 @@ Deno.test("rig's own @vars keys are not treated as foreign", () => {
 Deno.test("survives a cluster with no vars at all", () => {
 	assertEquals(foreignVars({}), {});
 });
+
+Deno.test("merging carries over the subjects rig maintains at runtime", () => {
+	const merged = mergePolicies(liveShape, rigDefaults);
+	assertEquals(merged.find(p => p["@id"] === "@ondemand-subjects")!.subjects, ["dozzle.example.live", "api.example.io"]);
+});
+
+Deno.test("merging leaves policies it is told to keep untouched", () => {
+	const merged = mergePolicies(liveShape, rigDefaults, ["@ondemand-subjects"]);
+	assertEquals(merged.find(p => p["@id"] === "@ondemand-subjects"), liveShape[2]);
+});

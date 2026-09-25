@@ -1,5 +1,5 @@
 import { assertEquals } from "@std/assert";
-import { defaultOnDemandInternalSubjects, generateSubjectWildcards } from "./tls.ts";
+import { defaultOnDemandInternalSubjects, generateSubjectWildcards, withTldWildcards } from "./tls.ts";
 
 Deno.test("builds one wildcard per level, growing left", () => {
 	assertEquals(generateSubjectWildcards("localhost", 1), ["*.localhost"]);
@@ -19,4 +19,12 @@ Deno.test("the default internal subjects cover ten levels under localhost", () =
 	assertEquals(defaultOnDemandInternalSubjects.length, 10);
 	assertEquals(defaultOnDemandInternalSubjects[0], "*.localhost");
 	assertEquals(defaultOnDemandInternalSubjects.at(-1), "*.".repeat(10) + "localhost");
+});
+
+Deno.test("registering a private TLD adds to what is there", () => {
+	const once = withTldWildcards(undefined, "devhost", 2);
+	assertEquals(once, [...defaultOnDemandInternalSubjects, "*.devhost", "*.*.devhost"]);
+	const twice = withTldWildcards(once, "corp", 1);
+	assertEquals(twice, [...once, "*.corp"]);
+	assertEquals(withTldWildcards(twice, "corp", 1), twice);
 });

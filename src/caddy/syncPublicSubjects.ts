@@ -12,33 +12,51 @@ import { publicAllowlistSentinel } from "./tls.ts";
  */
 export default async function syncPublicSubjects() {
 	// Skip on clusters not yet re-inited with the scoped policy.
-	if (!(await caddyApiFetch("get", "@ondemand-subjects"))) return;
+	const policy = await caddyApiFetch("get", "@ondemand-subjects");
+	if (!policy) return;
+	// The admin API's PATCH replaces an existing key and PUT creates a missing
+	// one; a hand-recreated policy may have no `subjects` yet.
+	const write = (subjects: string[]) => caddyApiFetch("subjects" in policy ? "patch" : "put", "@ondemand-subjects/subjects", subjects);
 
 	const vars = await caddyApiFetch("get", "@vars");
 	const clusterTld: string | undefined = vars?.clusterTld;
 
 	// Nothing public to allowlist on a .localhost / internal-TLD cluster.
 	if (!clusterTld || clusterTld.endsWith("host")) {
-		await caddyApiFetch("patch", "@ondemand-subjects/subjects", [publicAllowlistSentinel]);
+		await write([publicAllowlistSentinel]);
 		return;
 	}
 
-	const server = await caddyApiFetch("get", "@stacks");
-	const subjects = new Set<string>([publicAllowlistSentinel]);
+	const subjects = new Set([
+		publicAllowlistSentinel,
+		...routeSubjects(await caddyApiFetch("get", "@stacks"), clusterTld),
+		...await fetchExtraSubjects(vars?.extraSubjectsUrl)
+	]);
+
+	await write([...subjects]);
+}
+
+/**
+ * The FQDN of every host a deployed stack route matches. Wildcard matchers are
+ * skipped: `*.x` in the allowlist would let any SNI under it open an ACME
+ * order, which is the exposure the allowlist exists to close. A wildcard route
+ * needs a wildcard certificate (DNS-01), configured by hand.
+ */
+export function routeSubjects(server: any, clusterTld: string): string[] {
+	const subjects: string[] = [];
 	for (const route of server?.routes ?? []) {
 		for (const handler of route.handle ?? []) {
 			if (handler.handler !== "subroute") continue;
 			for (const sub of handler.routes ?? []) {
 				for (const matcher of sub.match ?? []) {
-					for (const host of matcher.host ?? []) subjects.add(`${host}${clusterTld}`);
+					for (const host of matcher.host ?? []) {
+						if (!host.includes("*")) subjects.push(`${host}${clusterTld}`);
+					}
 				}
 			}
 		}
 	}
-
-	for (const extra of await fetchExtraSubjects(vars?.extraSubjectsUrl)) subjects.add(extra);
-
-	await caddyApiFetch("patch", "@ondemand-subjects/subjects", [...subjects]);
+	return subjects;
 }
 
 /**
@@ -61,10 +79,9 @@ export default async function syncPublicSubjects() {
  * With no `extraSubjectsUrl` configured this is inert, so clusters that do not
  * use it behave exactly as before.
  *
- * The URL is read from `@vars`, which a deploy only ever READS — so it can be
- * seeded once through the admin API and survives every subsequent deploy. That
- * matters: `rig caddy init` is the only thing that rewrites `@vars`, and on a
- * cluster with hand-added automation policies re-initing would discard them.
+ * The URL is read from `@vars`, which a deploy only ever reads. It is set with
+ * `rig caddy init --extra-subjects-url=` (or through the admin API) and
+ * survives every later deploy and re-init.
  */
 export async function fetchExtraSubjects(url: unknown): Promise<string[]> {
 	if (typeof url !== "string" || !url.startsWith("https://")) return [];

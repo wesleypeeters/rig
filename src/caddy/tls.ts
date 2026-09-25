@@ -14,3 +14,11 @@ export const defaultOnDemandInternalSubjects = [
 // scoped. It sits under .localhost so the internal policy claims it first and
 // it can never trigger a public ACME order even if a scanner sprays it.
 export const publicAllowlistSentinel = "_rig-public-allowlist-sentinel.localhost";
+
+/**
+ * The internal on-demand subjects with wildcards for one more private TLD.
+ * Additive: registering a second TLD keeps the first.
+ */
+export function withTldWildcards(existing: string[] | undefined, tld: string, levels = 10): string[] {
+	return [...new Set([...(existing ?? defaultOnDemandInternalSubjects), ...generateSubjectWildcards(tld, levels)])];
+}

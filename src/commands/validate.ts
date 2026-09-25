@@ -1,5 +1,5 @@
 import parsed from "../stack/parsed.ts";
-import "../stack/name.ts";
+import name from "../stack/name.ts";
 import fatalError from "../util/fatal.ts";
 import type { RouteConfig, Routes, StackYml } from "../stack/types.ts";
 import { optional } from "../util/env.ts";
@@ -11,7 +11,9 @@ const validCsp = new Set(["mandatory", "optional"]);
 
 function validate({ services, ["x-rig"]: { routes } }: StackYml) {
 	validateRoutes(routes);
-	if (!ciMode || isClusterAdmin()) return;
+	// The proxy itself needs host ports and NET_ADMIN; name.ts reserves "caddy"
+	// for rig's own caddy/ directory, so this can't be borrowed.
+	if (!ciMode || isClusterAdmin() || name === "caddy") return;
 	for (const name in services) {
 		const service = services[name];
 		service.cap_add && fatalError("cap_add not allowed");
@@ -48,7 +50,7 @@ function validateRouteConfig({ target, access, csp }: RouteConfig) {
 
 function validateRoutes(routes: Routes) {
 	Object.entries(routes).forEach(([hosts, hostRoutes]) => {
-		hosts.split(" ").forEach(validateHostMatcher);
+		hosts.split(/\s+/).forEach(validateHostMatcher);
 		Object.keys(hostRoutes).forEach(validatePublishedRoute);
 		Object.values(hostRoutes).forEach(validateRouteConfig);
 	});

@@ -5,14 +5,33 @@ import fatalError from "../util/fatal.ts";
 import { outDir } from "../constants.ts";
 import type { Stack, FileRef } from "./types.ts";
 
-const SECRETS_DIR = `${outDir}/secrets`;
 const PREPARED_DIR = `${outDir}/prepared`;
+
+// Materialized values live in a private temp dir that is removed when rig
+// exits: nothing under the project, where a CI step uploading `.rig/` as an
+// artifact would publish them. Docker reads the files during `stack deploy`,
+// before exit. File names (and so Swarm object names) don't depend on the
+// directory, see processFiles.
+let secretsDir: string | undefined;
+function getSecretsDir() {
+	if (!secretsDir) {
+		const dir = secretsDir = Deno.makeTempDirSync({ prefix: "rig-secrets-" });
+		globalThis.addEventListener("unload", () => {
+			try {
+				Deno.removeSync(dir, { recursive: true });
+			} catch {
+				// Already gone.
+			}
+		});
+	}
+	return secretsDir;
+}
 
 /**
  * Resolve `x-rig-env` entries in each input YAML before they reach `docker
  * stack config`. For every secret or config with `x-rig-env: SOME_VAR`:
- *   - env var set with a value: write the value to .rig/secrets/, rewrite
- *     `file:` to that path, drop `x-rig-env`.
+ *   - env var set with a value: write the value to a private temp file,
+ *     rewrite `file:` to that path, drop `x-rig-env`.
  *   - env var set but empty: fatal (misconfiguration).
  *   - env var unset: leave the entry alone. Compose merges against any
  *     `file:` fallback in this or another layer. Deploy-time checks (in
@@ -31,7 +50,7 @@ export default async function prepareYmlFiles(files: string[]): Promise<string[]
 	}
 	if (!needsRewrite) return files;
 
-	await Promise.all([ensureDir(SECRETS_DIR), ensureDir(PREPARED_DIR)]);
+	await ensureDir(PREPARED_DIR);
 
 	return Promise.all(docs.map(async ({ path, doc }) => {
 		await materializeRefs(doc.secrets);
@@ -40,6 +59,7 @@ export default async function prepareYmlFiles(files: string[]): Promise<string[]
 		absolutizeRefs(doc.secrets, base);
 		absolutizeRefs(doc.configs, base);
 		absolutizeServiceBinds(doc.services, base);
+		absolutizeServicePaths(doc.services, base);
 		const out = join(PREPARED_DIR, basename(path));
 		await Deno.writeTextFile(out, stringify(doc));
 		return out;
@@ -80,6 +100,23 @@ function absolutizeServiceBinds(services: Stack["services"] | undefined, base: s
 	}
 }
 
+// The rest of what compose resolves against the input file's directory:
+// env_file entries, the build context and `extends: { file }`.
+export function absolutizeServicePaths(services: Stack["services"] | undefined, base: string) {
+	if (!services) return;
+	const abs = (p: string) => isAbsolute(p) || /^([a-z][a-z\d+.-]*:\/\/|git@)/i.test(p) ? p : resolve(base, p);
+	for (const service of Object.values(services) as any[]) {
+		if (!service) continue;
+		if (typeof service.env_file === "string") service.env_file = abs(service.env_file);
+		else if (Array.isArray(service.env_file)) {
+			service.env_file = service.env_file.map((e: any) => typeof e === "string" ? abs(e) : { ...e, path: abs(e.path) });
+		}
+		if (typeof service.build === "string") service.build = abs(service.build);
+		else if (typeof service.build?.context === "string") service.build.context = abs(service.build.context);
+		if (typeof service.extends?.file === "string") service.extends.file = abs(service.extends.file);
+	}
+}
+
 function isRelativeBindPath(source: string): boolean {
 	return source.startsWith(".") || source.startsWith("~");
 }
@@ -96,8 +133,8 @@ async function materializeRefs(refs?: Record<string, FileRef>) {
 		const value = Deno.env.get(key);
 		if (value === undefined) return;
 		if (value === "") return fatalError(`x-rig-env refers to env var ${key} which is set but empty`);
-		const path = join(SECRETS_DIR, key.toLowerCase().replace(/[^a-z0-9]+/g, "-"));
-		await Deno.writeTextFile(path, value);
+		const path = join(getSecretsDir(), key.toLowerCase().replace(/[^a-z0-9]+/g, "-"));
+		await Deno.writeTextFile(path, value, { mode: 0o600 });
 		f.file = await Deno.realPath(path);
 		delete f["x-rig-env"];
 	}));

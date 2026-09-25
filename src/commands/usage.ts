@@ -12,18 +12,21 @@ COMMANDS
   json                 Output merged stack config as JSON
   validate             Validate stack against governance rules
   show                 Interactive overview of running services
-  debug <service>      Shell into a running service container
+  debug <service>      Shell into a running service container (docker debug)
   exec <service> ...   Execute command in service container
-  run <service> ...    Run a fresh container from a service image (cwd mounted at /project)
-  cleanup              Remove stale review environments
-  rollback             Redeploy using a previous digest lockfile
-  update               Pull latest version and rebuild caddy
+  run <service> ...    Run a fresh container from a service image (cwd mounted and used at /project)
+  cleanup [--max-age=<48h|2d>]
+                       Remove review environments whose PR closed or that are older than max-age
+  rollback [--list | --to=<entry>]
+                       Restore an earlier lockfile of this environment (then run deploy)
+  update               Pull latest rig, reinstall, rebuild and redeploy caddy
   network <name>       Create a swarm-scoped overlay network
   dir <stack>          Print the source directory recorded for a deployed stack
-  caddy init [tld]     Initialize Caddy's base configuration
+  caddy init [<tld>] [--private-subnet=<cidr,...>] [--extra-subjects-url=<url>] [--force]
+                       Initialize Caddy, or reconcile a running Caddy with rig's config
   caddy trust          Install Caddy's root CA certificate locally
-  caddy tld <name>     Register a custom TLD wildcard
-  caddy log <level>    Set Caddy's log level
+  caddy tld <name>     Add internal-CA certificates for a private TLD
+  caddy log <level>    Set Caddy's log level (DEBUG, INFO, WARN, ERROR)
 `;
 
 console.log(usage.trim());

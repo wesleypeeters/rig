@@ -11,18 +11,25 @@ const maxAgeMs = maxAgeArg ? parseDuration(maxAgeArg.split("=")[1]) : null;
 
 function parseDuration(s: string): number {
 	const match = s.match(/^(\d+)(h|d)$/);
-	if (!match) throw new Error(`Invalid duration: ${s}`);
+	if (!match) fatalError(`Invalid duration ${JSON.stringify(s)}: use e.g. 48h or 2d`);
 	const [, n, unit] = match;
 	return Number(n) * (unit === "h" ? 3600000 : 86400000);
 }
 
-// Find all review stacks for this stack name.
-const stacks = (await $`docker stack ls --format "{{.Name}}"`.text()).trim().split("\n").filter(Boolean);
-const reviewPattern = new RegExp(`^${name}_r(\\d+)$`);
-const reviewStacks = stacks
-	.map(s => ({ name: s, match: s.match(reviewPattern) }))
-	.filter(({ match }) => match)
-	.map(({ name, match }) => ({ name, prNumber: Number(match![1]) }));
+const reviewPattern = new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}_r(\\d+)$`);
+
+// Review environments of this stack, found in Swarm and in Caddy. A Caddy-only
+// entry is what a teardown leaves when it removed the Swarm stack but failed
+// before the routes; without this it would hold its port range forever.
+const swarmStacks = new Set(
+	(await $`docker stack ls --format "{{.Name}}"`.text()).split("\n").filter(s => reviewPattern.test(s))
+);
+const caddyStacks = new Map<string, number | undefined>(
+	((await caddyApiFetch("get", "@stacks/routes")) ?? [])
+		.filter((route: any) => reviewPattern.test(route?.["@id"] ?? ""))
+		.map((route: any) => [route["@id"], route.handle?.[0]?.portRangeId])
+);
+const reviewStacks = [...new Set([...swarmStacks, ...caddyStacks.keys()])].sort();
 
 if (!reviewStacks.length) {
 	info("No review stacks found.");
@@ -33,38 +40,48 @@ const { GITHUB_TOKEN, GITHUB_REPOSITORY } = optional;
 if (!GITHUB_TOKEN || !GITHUB_REPOSITORY) {
 	fatalError("cleanup needs GITHUB_TOKEN and GITHUB_REPOSITORY to check PR state; set them in the workflow env");
 }
+
+/** Whether the PR is closed, or null when GitHub couldn't say. */
+async function isPrClosed(prNumber: number): Promise<boolean | null> {
+	const response = await fetch(`https://api.github.com/repos/${GITHUB_REPOSITORY}/pulls/${prNumber}`, {
+		headers: { authorization: `Bearer ${GITHUB_TOKEN}`, accept: "application/vnd.github+json" }
+	});
+	if (!response.ok) {
+		console.warn(`Could not read the state of PR #${prNumber} (${response.status} ${response.statusText}); only its age is checked.`);
+		await response.body?.cancel();
+		return null;
+	}
+	return (await response.json()).state !== "open";
+}
+
+/** Milliseconds since the stack's most recently updated service changed. */
+async function stackAge(stack: string): Promise<number | null> {
+	// UpdatedAt resets on redeploy, so an active stack keeps its clock refreshed.
+	const serviceIds = (await $`docker stack services ${stack} --format "{{.ID}}"`.text()).split("\n").filter(Boolean);
+	let newestUpdate = 0;
+	for (const id of serviceIds) {
+		const t = (await $`docker service inspect ${id} --format "{{.UpdatedAt}}"`.text()).trim();
+		newestUpdate = Math.max(newestUpdate, new Date(t).getTime() || 0);
+	}
+	return newestUpdate ? Date.now() - newestUpdate : null;
+}
+
 let removed = 0;
 
 for (const stack of reviewStacks) {
-	let isStale = false;
-	// Check if PR is still open.
-	const response = await fetch(`https://api.github.com/repos/${GITHUB_REPOSITORY}/pulls/${stack.prNumber}`, {
-		headers: { authorization: `Bearer ${GITHUB_TOKEN}` }
-	});
-	if (response.ok) {
-		const pr = await response.json();
-		isStale = pr.state !== "open";
+	const prNumber = Number(stack.match(reviewPattern)![1]);
+	let isStale = await isPrClosed(prNumber) === true;
+	// Age needs Swarm services; a Caddy-only leftover is judged by its PR alone.
+	if (!isStale && maxAgeMs && swarmStacks.has(stack)) {
+		const age = await stackAge(stack);
+		isStale = age !== null && age > maxAgeMs;
 	}
-	if (!isStale && maxAgeMs) {
-		// Check stack age via the most-recently-updated service. UpdatedAt resets
-		// on redeploy, so an active stack keeps its clock refreshed.
-		const serviceIds = (await $`docker stack services ${stack.name} --format "{{.ID}}"`.text()).trim().split("\n").filter(Boolean);
-		let newestUpdate = 0;
-		for (const id of serviceIds) {
-			const t = (await $`docker service inspect ${id} --format "{{.UpdatedAt}}"`.text()).trim();
-			const ms = new Date(t).getTime();
-			if (ms > newestUpdate) newestUpdate = ms;
-		}
-		if (newestUpdate && (Date.now() - newestUpdate) > maxAgeMs) isStale = true;
-	}
-	if (isStale) {
-		info(`Removing stale review stack ${stack.name}...`);
-		const vars: any = await caddyApiFetch("get", `${stack.name}/handle/0`);
-		const portRangeId = vars?.portRangeId;
-		await $`docker stack rm ${stack.name}`;
-		await removeCaddyConfig(stack.name, portRangeId);
-		removed++;
-	}
+	if (!isStale) continue;
+
+	info(`Removing stale review stack ${stack}...`);
+	if (swarmStacks.has(stack)) await $`docker stack rm ${stack}`;
+	if (caddyStacks.has(stack)) await removeCaddyConfig(stack, caddyStacks.get(stack));
+	removed++;
 }
 
 info(`Done. Removed ${removed} stale review stack${removed === 1 ? "" : "s"}.`);

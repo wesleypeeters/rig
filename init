@@ -6,14 +6,19 @@ if ! docker info --format '{{range .DriverStatus}}{{index . 1}}{{end}}' | grep -
     exit 1
 fi
 # Make sure swarm mode is active.
-docker swarm init > /dev/null 2>&1 && echo "Swarm mode enabled" || echo "Swarm mode confirmed"
+if [ "$(docker info --format '{{.Swarm.LocalNodeState}}')" = "active" ]; then
+    echo "Swarm mode already active"
+else
+    docker swarm init > /dev/null
+    echo "Swarm mode enabled"
+fi
 # Install the rig command globally.
 deno task install
 # Build and deploy Caddy.
 cd caddy
 rig build
 rig deploy
-echo "\nCaddy is now up-and-running, ready to be configured."
+printf '\nCaddy is now up-and-running, ready to be configured.\n'
 cd ..
 # Initialize Caddy config for rig deployments.
 rig caddy init

@@ -5,7 +5,10 @@ import { prNumber } from "../github/pr.ts";
 import { optional } from "../util/env.ts";
 import { stackTarget as STACK_TARGET } from "../constants.ts";
 
-const { CLUSTER = "local", CLUSTER_TLD = ".localhost", STACK_REVIEW_ID = prNumber === null ? "" : String(prNumber) } = optional;
+const { CLUSTER = "local", CLUSTER_TLD = ".localhost" } = optional;
+// Derived only: the review id also names the stack and its routes (stack/id.ts),
+// so letting the environment override it would change the suffix alone.
+const STACK_REVIEW_ID = prNumber === null ? "" : String(prNumber);
 
 Object.entries({
 	TIMESTAMP: new Date().toISOString(),

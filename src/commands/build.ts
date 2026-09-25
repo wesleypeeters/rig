@@ -4,6 +4,7 @@ import { outDir, ciMode } from "../constants.ts";
 import info from "../util/info.ts";
 import gitIgnore from "../util/gitIgnore.ts";
 import lockFilePath from "../stack/lockfile.ts";
+import { archiveLockfile } from "../stack/lockHistory.ts";
 import interleave from "../util/interleave.ts";
 import stack from "../stack/parsed.ts";
 import ymlFiles from "../stack/ymlFiles.ts";
@@ -12,7 +13,7 @@ import { optional, mandatory } from "../util/env.ts";
 import getServiceTag from "../stack/getServiceTag.ts";
 
 const { services } = stack;
-gitIgnore(outDir);
+await gitIgnore(outDir);
 
 const fileList = interleave(ymlFiles, "-f");
 const [bakeOutput] = await Promise.all([
@@ -36,7 +37,7 @@ if (hasKeys(target)) {
 	}
 	await $`docker buildx bake ${interleave(tags, "--set")} ${$.rawArg(shouldPush ? "--push" : "")} --provenance false --metadata-file ${metadataTempFile} ${fileList}`;
 	metadata = JSON.parse(await Deno.readTextFile(metadataTempFile));
-	Deno.remove(metadataTempFile);
+	await Deno.remove(metadataTempFile);
 } else {
 	info("Nothing to build.");
 }
@@ -61,6 +62,8 @@ for (const serviceName in services) {
 		: image.includes("@") ? image : await registryClient.resolveCanonicalImageSpecifier(image);
 }
 
+const lockfile = JSON.stringify(serviceDigests, null, 2);
+await archiveLockfile(lockfile);
 info(`Writing image digests to ${lockFilePath}...`);
-await Deno.writeTextFile(lockFilePath, JSON.stringify(serviceDigests, null, 2));
+await Deno.writeTextFile(lockFilePath, lockfile);
 info("Done.");

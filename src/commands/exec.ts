@@ -1,6 +1,7 @@
 import $ from "@david/dax";
 import findContainer from "../stack/findContainer.ts";
 import fatalError from "../util/fatal.ts";
+import dockerTtyFlags from "../util/tty.ts";
 
 const service = Deno.args[1];
 if (!service) fatalError("Usage: rig exec <service> <command...>");
@@ -12,5 +13,5 @@ const { containerId, dockerHost } = await findContainer(service);
 if (dockerHost) Deno.env.set("DOCKER_HOST", dockerHost);
 // noThrow + propagate the exit code: a non-zero command (or `exit 1` from a
 // shell) should set rig's exit code, not dump a dax stack trace.
-const { code } = await $`docker exec -it ${containerId} ${cmd}`.noThrow();
+const { code } = await $`docker exec ${dockerTtyFlags()} ${containerId} ${cmd}`.noThrow();
 Deno.exit(code);

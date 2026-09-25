@@ -1,10 +1,19 @@
 import memoize from "../util/memoize.ts";
 
-function getImageDetails(imageId: string) {
+/**
+ * Split an image reference into registry host, repository and tag, following
+ * Docker's rules: the first path segment is a registry when it contains a dot
+ * or a port, or is "localhost"; anything else is a Docker Hub repository.
+ */
+export function parseImageReference(reference: string) {
+	const slash = reference.lastIndexOf("/");
+	const colon = reference.lastIndexOf(":");
+	const [imageId, tag] = colon > slash ? [reference.slice(0, colon), reference.slice(colon + 1)] : [reference, "latest"];
 	const [firstSegment, ...rest] = imageId.split("/");
-	return firstSegment.includes(".")
-		? [firstSegment, rest.join("/")]
-		: ["registry-1.docker.io", (rest.length ? "" : "library/") + imageId];
+	const isRegistry = rest.length > 0 && (/[.:]/.test(firstSegment) || firstSegment === "localhost");
+	const [host, name] = isRegistry ? [firstSegment, rest.join("/")] : ["docker.io", imageId];
+	if (host !== "docker.io") return { host, name, tag };
+	return { host: "registry-1.docker.io", name: name.includes("/") ? name : `library/${name}`, tag };
 }
 
 async function fetchToken(url: string, name: string) {
@@ -23,8 +32,7 @@ const accept = [
 export default function (getAuthUrl?: (host: string) => string | undefined) {
 	const getAuthUrlMem = memoize(getAuthUrl!);
 
-	const getRegistryApi = memoize(async function (imageId: string) {
-		const [host, name] = getImageDetails(imageId);
+	const getRegistryApi = memoize(async function (host: string, name: string) {
 		const authUrl = (getAuthUrl && getAuthUrlMem(host)) || `https://${host}/token?service=${host}`;
 		const token = await fetchToken(authUrl, name);
 		return {
@@ -43,17 +51,16 @@ export default function (getAuthUrl?: (host: string) => string | undefined) {
 		};
 	});
 
-	const fetchImageSpecifier = memoize(async (imageId: string, tag: string) =>
-		(await getRegistryApi(imageId)).fetch(`manifests/${tag}`)
+	const fetchImageSpecifier = memoize(async (host: string, name: string, tag: string) =>
+		(await getRegistryApi(host, name)).fetch(`manifests/${tag}`)
 	);
 
 	return {
 		resolveCanonicalImageSpecifier(imageSpecifier: string) {
-			const [image, digest] = imageSpecifier.split("@", 2);
-			if (digest) throw new Error("Image specifier already contains digest");
-			const [imageId, tag = "latest"] = image.split(":", 2);
-			if (!imageId) throw new Error("Missing image id");
-			return fetchImageSpecifier(imageId, tag);
+			if (imageSpecifier.includes("@")) throw new Error("Image specifier already contains digest");
+			if (!imageSpecifier) throw new Error("Missing image id");
+			const { host, name, tag } = parseImageReference(imageSpecifier);
+			return fetchImageSpecifier(host, name, tag);
 		}
 	};
 }

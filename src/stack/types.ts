@@ -37,7 +37,6 @@ export type Service = {
 	ports?: Port[];
 	volumes?: Volume[];
 	cap_add?: string[];
-	privileged?: boolean;
 };
 
 export type FileRef = {

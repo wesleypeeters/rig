@@ -10,13 +10,13 @@ This tool expects [standard Docker Swarm stack definitions](https://docs.docker.
 
 You should only define things in `local` that you don't want in `ci` mode. Accordingly, you should only define things in `ci` that you don't want in `local` mode.
 
-Cluster-specific overlays let one repo ship a different service set per cluster — for example a staging cluster that swaps the real mail infrastructure for a Mailpit sandbox while `ci.stack.yml` keeps serving production. Because Compose merging can only add or override (never remove) services, the cluster file *replaces* the CI overlay rather than layering on top of it: duplicate what the cluster shares with `ci.stack.yml`, change what differs. This is fully backwards compatible — clusters without a dedicated file (and deploys where `CLUSTER` is unset) keep merging `ci.stack.yml` exactly as before.
+Cluster-specific overlays let one repo ship a different service set per cluster, for example a staging cluster that swaps the real mail infrastructure for a Mailpit sandbox while `ci.stack.yml` keeps serving production. Because Compose merging can only add or override (never remove) services, the cluster file *replaces* the CI overlay rather than layering on top of it: duplicate what the cluster shares with `ci.stack.yml`, change what differs. Clusters without a dedicated file, and deploys where `CLUSTER` is unset, merge `ci.stack.yml`.
 
 For example, placement constraints should likely only apply to `ci` mode and host-mounted volumes should only ever be used in `local` mode as those aren't allowed in `ci` mode.
 
-Any configuration specific to rig is expected under a global extension section named `x-rig`.
+Any configuration specific to rig is expected under a global extension section named `x-rig`. It can appear in overlay files too (e.g. a route that only exists locally): later files win per key, and `routes` merge per host. Unlike `stack.yml`, `x-rig` in an overlay is not interpolated, so keep its values literal.
 
-In order to be identifiable on the cluster a stack must specify its name:
+In order to be identifiable on the cluster a stack must specify its name. The name `caddy` is reserved for rig's proxy, and `localhost`, purely numeric names and names starting with `@` are rejected because they would collide with Caddy's own config ids.
 
 ```yaml
 # stack.yml
@@ -99,18 +99,19 @@ Some things to note:
 
 Besides `target:` you can also specify:
 
-- `access:` sets the access level for the route
+- `access:` sets who may reach the route. What is enforced today:
 
-  Each level inherits from the levels below:
-  - `none` -- block access (intended to override the access level for a subroute)
-  - `internal` -- (default) accessible by other stacks on the cluster
-  - `local` -- accessible from the local host
-  - `private` -- accessible from private network IPs (e.g. via VPN)
-  - `public` -- accessible from anywhere
+  | Level | Meant for | Enforced as |
+  |-------|-----------|-------------|
+  | `public` | anyone | served to anyone who can reach Caddy |
+  | `private` | clients on the VPN | client IP must be in the subnet from `rig caddy init --private-subnet=`, otherwise `403`; no restriction if no subnet is configured |
+  | `local` | the local host | not enforced yet: served like `public` |
+  | `internal` (default) | other stacks on the cluster | not enforced yet: served like `public` |
+  | `none` | nobody | answers `403 Forbidden`, and the target service isn't published on a host port |
 
-> [!note]
+> [!warning]
 >
-> The `private` access level is enforced by matching the client IP against the VPN subnet configured during `rig caddy init --private-subnet=`. Requests from outside the subnet receive a `403 Forbidden` response. The `internal`, `local`, and `none` levels are not yet enforced.
+> Until `internal` and `local` are enforced, a route is reachable by anyone who can resolve its hostname and reach the cluster, whatever its level. Use `private` or `none` for anything that must not be. Services behind routes are also published on host ports; see [cluster setup: firewall](04-cluster-setup.md#firewall-the-published-port-ranges).
 
 - `csp:` declares the route's CSP policy: `mandatory` or `optional` (default)
 
@@ -155,13 +156,16 @@ This is arguably the most important section. Environment variable management is 
 
 Every environment variable the application reads MUST be declared in `stack.yml`. This makes it the single source of truth for what config the application expects. If a variable isn't in `stack.yml`, it doesn't exist as far as the stack is concerned.
 
-### Priority order (highest to lowest)
+### Where values come from
 
-1. **Docker secrets** (`/run/secrets/<name>`) -- for sensitive data only
-2. **env_file** -- loaded from file path (used in `ci.stack.override.yml` for per-environment config)
-3. **environment section** -- defined in stack files
-4. **.env file** -- auto-loaded by Docker Buildx (local dev only, git-ignored)
-5. **Hardcoded fallbacks** -- `${VAR:-default}` syntax in stack files
+rig resolves a service's environment when it reads the stack files, with `docker stack config`:
+
+- **`environment:` values** are used as written, after `${VAR}` interpolation.
+- **Empty declarations** (`API_KEY:`) take their value from rig's own environment: the shell, the step env in CI, and the `.env` file in the working directory, which rig loads for every command. If the variable isn't set there, the key is left out of the container's environment.
+- **`env_file:`** entries only fill keys that `environment:` doesn't mention. A key declared in `environment:`, even empty, wins over `env_file`, so an empty declaration never picks up an `env_file` value.
+- **Docker secrets** aren't environment variables at all; see [secrets & configs](#secrets--configs).
+
+Interpolation (`${VAR}`, `${VAR:-default}`, `${VAR:?}`) reads the same environment as empty declarations.
 
 ### Declaration patterns
 
@@ -170,7 +174,7 @@ Every environment variable the application reads MUST be declared in `stack.yml`
 environment:
   DATABASE_HOST: mysql          # Has a default -- shared across environments
   CHAIN_ID:                     # Empty -- MUST be set per-service in stack.override.yml
-  API_KEY:                      # Empty -- set via .env locally, env_file in CI
+  API_KEY:                      # Empty -- set via .env locally, the rig step's environment in CI
 ```
 
 **Default values** use Docker Compose interpolation:
@@ -198,8 +202,8 @@ environment:
 | Per-service values | `stack.override.yml` | `CHAIN_ID: 137` |
 | Local dev values | `local.stack.override.yml` | `RPC_URL: http://devnet:8545` |
 | Local dev secrets | `.env` (git-ignored) | `API_KEY=sk-...` |
-| CI/production config | `ci.stack.override.yml` via `env_file` | `env_file: $MY_SERVICE_ENV_FILE` |
-| Sensitive credentials | Docker secrets | `file: $MY_SECRET_FILE` |
+| CI/production config | GitHub environment variables, in the env of the step that runs rig | `API_URL: ${{ vars.API_URL }}` |
+| Sensitive credentials | Docker secrets with `x-rig-env` | `x-rig-env: RELAYER_KEY` |
 
 ### Rules
 
@@ -244,7 +248,7 @@ Resolution rules at deploy time:
 
 | Env var | `file:` present | Outcome |
 |---------|-----------------|---------|
-| Set | (any) | Materialized to `.rig/secrets/`, `file:` rewritten to that path |
+| Set | (any) | Written to a private temp file, `file:` rewritten to that path |
 | Set but empty | (any) | Fatal |
 | Unset, CI mode | (any) | Fatal |
 | Unset, local mode | yes | Falls back to `file:` |
@@ -258,9 +262,9 @@ Reading in application code:
 const secret = await fs.readFile('/run/secrets/relayer_key', 'utf8');
 ```
 
-Locally, commit `dev/relayer_key` with throwaway credentials that only work against dev infrastructure. In CI, set `RELAYER_KEY` as a GitHub environment secret. At deploy time rig reads the env var, writes the value to `.rig/secrets/`, and points the Docker secret's `file:` at that path.
+Locally, commit `dev/relayer_key` with throwaway credentials that only work against dev infrastructure. In CI, set `RELAYER_KEY` as a GitHub environment secret. At deploy time rig reads the env var, writes the value to a temp file only the current user can read, and points the Docker secret's `file:` at it. The file is deleted when rig exits, so it never lands in the project directory (or in an artifact uploaded from it).
 
-This sidesteps the GitHub limitation that environment secrets are strings, not files -- rig materializes them into files on the runner before `docker stack deploy` runs.
+This sidesteps the GitHub limitation that environment secrets are strings, not files: rig materializes them into files on the runner for the duration of the command.
 
 ### Docker configs
 

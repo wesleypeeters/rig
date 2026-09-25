@@ -4,9 +4,9 @@ A wrapper around `docker stack`, `docker buildx bake` and Caddy for deploying an
 
 ## Why I built this
 
-I wanted PaaS ergonomics on hardware I already run — push a branch and get a deployment with working HTTPS, open a PR and get a throwaway review environment that cleans itself up when the PR closes — without renting a platform or taking on Kubernetes. Docker Swarm already does the hard part of scheduling containers across nodes; what was missing was the glue around it. `rig` is that glue: it wraps `docker stack`, `docker buildx bake` and Caddy behind one command so deploying is a single step, routes and TLS are configured for you, and review environments come for free.
+I wanted PaaS ergonomics on hardware I already run -- push a branch and get a deployment with working HTTPS, open a PR and get a throwaway review environment that cleans itself up when the PR closes -- without renting a platform or taking on Kubernetes. Docker Swarm already does the hard part of scheduling containers across nodes; what was missing was the glue around it. `rig` is that glue: it wraps `docker stack`, `docker buildx bake` and Caddy behind one command so deploying is a single step, routes and TLS are configured for you, and review environments come for free.
 
-The thing I cared about most is that local and CI run the same code path. `rig deploy` on my laptop does exactly what CI does -- the only difference is where `DOCKER_HOST` points -- so I can reproduce a cluster deploy locally instead of debugging it through a CI dashboard. CI mode just layers on the governance rules (no host-mounted volumes, no directly published ports) that keep stacks isolated from each other on a shared cluster.
+The thing I cared about most is that local and CI run the same code path, so I can reproduce a cluster deploy on my laptop instead of debugging it through a CI dashboard. CI mode differs in three deliberate ways: it merges the CI stack overlay instead of the local one, builds the `ci` Dockerfile stage, and enforces the governance rules (no host-mounted volumes, no directly published ports) that keep stacks isolated from each other on a shared cluster. Which cluster it talks to is up to `DOCKER_HOST`.
 
 ## How it works
 
@@ -25,7 +25,7 @@ rig deploy ──┬──▶ docker stack deploy     each routed service publis
        │  Caddy  :443                   │
        │    capture original host       │
        │    strip cluster TLD ──────────┼──  myapp.r42.dev.example.com
-       │    http cache (opt-in)         │                  └──▶ myapp.r42
+       │                                │                  └──▶ myapp.r42
        │    match host ──▶ stack route  │
        │    reverse_proxy ──────────────┼──▶ host:49163 (stack's port range)
        └───────────────┬────────────────┘
@@ -49,7 +49,7 @@ The reverse proxy restores the original Host header before forwarding, so upstre
 
 ### Prerequisites
 
-[Docker Desktop](https://docs.docker.com/desktop/setup/install/mac-install/) (or [OrbStack](https://orbstack.dev/)) and [Deno](https://docs.deno.com/runtime/getting_started/installation/) must be installed. The containerd snapshotter must be enabled and Docker Swarm must be initialized (`docker swarm init`).
+[Docker Desktop](https://docs.docker.com/desktop/setup/install/mac-install/) (or [OrbStack](https://orbstack.dev/)) and [Deno](https://docs.deno.com/runtime/getting_started/installation/) must be installed, with the containerd snapshotter enabled. The installation below initializes Docker Swarm if it isn't already.
 
 For Docker Desktop, enable "Use containerd for pulling and storing images" in settings. For OrbStack, add the following to `~/.orbstack/config/docker.json`:
 
@@ -69,7 +69,7 @@ Check out this repository and from its root run:
 ./init
 ```
 
-This will install the `rig` command globally, build and deploy Caddy (the reverse proxy that sits in front of all your stacks), and trust its local root CA (will ask for your password).
+This installs the `rig` command globally, builds and deploys Caddy (the reverse proxy that sits in front of all your stacks), and trusts its local root CA (it will ask for your password).
 
 ### The `rig` command
 
@@ -81,7 +81,7 @@ rig
 
 The `rig` command looks in the current directory for `stack.yml`. This file is interpreted as a Docker Swarm stack definition. The `rig` command expects an extension section named `x-rig` which must specify a `name` property. For more detailed information about specifying stacks and routes, have a look at the [docs](docs/).
 
-The subcommands can run in two modes: `local` (default) or `ci`. Depending on the mode the `local.stack.yml` or `ci.stack.yml` file (if it exists) will be merged into the `stack.yml` file. In CI mode, a cluster-specific `<cluster>.stack.yml` (matching the `CLUSTER` env var) is merged **instead of** `ci.stack.yml` when it exists — clusters without one fall back to `ci.stack.yml` as before. CI mode enforces cluster governance rules.
+The subcommands can run in two modes: `local` (default) or `ci`. Depending on the mode the `local.stack.yml` or `ci.stack.yml` file (if it exists) will be merged into the `stack.yml` file. In CI mode, a cluster-specific `<cluster>.stack.yml` (matching the `CLUSTER` env var) is merged **instead of** `ci.stack.yml` when it exists; clusters without one use `ci.stack.yml`. CI mode enforces cluster governance rules.
 
 To deploy a stack locally:
 
@@ -97,7 +97,7 @@ CI=true rig config
 CI=true rig validate
 ```
 
-Note that the stack environment only specifies which configuration to use -- it doesn't control where the stack is going to be deployed. That's controlled by the `DOCKER_HOST` environment variable or `docker context use`. Typically you won't be performing remote cluster deployments locally as that's what CI is for.
+Note that the mode only selects which configuration to use. Where the stack is deployed is controlled by the `DOCKER_HOST` environment variable or `docker context use`, e.g. `DOCKER_HOST=ssh://root@<manager>`, which is also how the GitHub Action reaches a cluster. Typically you won't deploy to a remote cluster from your laptop; that's what CI is for.
 
 ### Commands
 
@@ -113,9 +113,9 @@ Run `rig` with no arguments for the full list. In brief:
 | `rig show` | Interactive overview of running services |
 | `rig debug <service>` / `rig exec <service> ...` | Shell into / run a command in a running container |
 | `rig run <service> ...` | Run a fresh container from a service image (cwd at `/project`) |
-| `rig cleanup` | Remove stale review environments |
-| `rig rollback` | Redeploy from a previous digest lockfile |
-| `rig update` | Pull the latest rig and rebuild Caddy |
+| `rig cleanup [--max-age=48h]` | Remove review environments whose PR closed or that went stale |
+| `rig rollback [--list \| --to=<entry>]` | Restore an earlier lockfile of this environment, then `rig deploy` |
+| `rig update` | Pull the latest rig, reinstall it, rebuild and redeploy Caddy |
 | `rig network <name>` | Create a swarm-scoped overlay network |
 | `rig dir <stack>` | Print the source directory recorded for a deployed stack |
 | `rig caddy init\|trust\|tld\|log` | Manage the Caddy reverse proxy |
@@ -127,7 +127,7 @@ Run `rig` with no arguments for the full list. In brief:
 - [Review environments](docs/03-review-environments.md) -- per-PR deployments with GitHub Actions
 - [Cluster setup](docs/04-cluster-setup.md) -- setting up a new Swarm cluster
 - [Caddy integration](docs/05-caddy-integration.md) -- reverse proxy internals and troubleshooting
-- [Advanced topics](docs/06-advanced-topics.md) -- force-restart, short-running jobs, tuning, exec/run access, shared networks, ingress IP exhaustion
+- [Advanced topics](docs/06-advanced-topics.md) -- force-restart, short-running jobs, tuning, exec/run access, rollback, shared networks, ingress IP exhaustion
 - [Special variables](docs/07-special-variables.md) -- injected environment variables reference
 - [FAQ](docs/08-faq.md) -- common questions answered
 

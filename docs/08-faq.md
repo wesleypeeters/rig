@@ -17,23 +17,23 @@ A review environment is a temporary deployment on the cluster where progress on 
 <details>
 <summary>How do I expose a service to the public?</summary>
 
-Only services deployed to a cluster with public DNS should be made public. Add a route in `stack.yml` that uses a public hostname with `access: public`. Make sure the hostname's DNS points to the cluster. See [defining stacks](02-defining-stacks.md#exposing-services).
+Add a route in `stack.yml` that uses a public hostname with `access: public`, and point the hostname's DNS at the cluster. Note that `internal` (the default) and `local` aren't enforced yet, so on a cluster with public DNS those routes are reachable too; use `private` or `none` for anything that mustn't be. See [defining stacks](02-defining-stacks.md#exposing-services).
 
 </details>
 
 <details>
 <summary>How do I roll back a deployment?</summary>
 
-Use `rig rollback` to switch to a previous lockfile, then `rig deploy` to apply it. The lockfile pins every image to an exact digest so rollback is deterministic.
+Use `rig rollback` to restore the lockfile from before the last build, then `rig deploy` to apply it. The lockfile pins every image to an exact digest, so the rollback deploys exactly what ran before.
 
 ```sh
 rig rollback
 rig deploy
 ```
 
-By default `rig rollback` picks the second-most-recent lockfile in the output directory. To target a specific one, use `rig rollback --to=<name>`, where `<name>` is the lockfile's basename without `.json`.
+`rig rollback --list` shows the earlier lockfiles and `rig rollback --to=<entry>` picks one. See [advanced topics](06-advanced-topics.md#rolling-back).
 
-You can also re-run a previous GitHub Actions workflow run from the Actions tab.
+In CI, where every run starts from a fresh checkout, re-run the earlier workflow run from the Actions tab instead.
 
 </details>
 

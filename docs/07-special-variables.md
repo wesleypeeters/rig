@@ -1,6 +1,6 @@
 # Special variables
 
-These variables are automatically injected into the environment when deploying. You can use them in your stack's YAML configuration.
+rig sets these variables whenever it reads the stack files, which every command does. You can use them in your stack's YAML configuration.
 
 <table>
 <tr>
@@ -43,7 +43,7 @@ The cluster being targeted. For example:
 </td>
 <td>
 
-Used to determine `CLUSTER_TLD`. Defaults to `local`.
+Selects the cluster overlay: in CI mode, `<cluster>.stack.yml` is merged instead of `ci.stack.yml` when it exists. Defaults to `local`. Set it in the environment of the step that runs rig.
 </td>
 </tr>
 <tr>
@@ -59,7 +59,7 @@ The TLD assigned to the cluster. For example:
 </td>
 <td>
 
-Useful for configuring allowed hosts for CORS. Defaults to `.localhost`.
+Useful for configuring allowed hosts for CORS. Defaults to `.localhost`; set it in the environment of the step that runs rig. An empty value means hostnames are used as-is (production).
 </td>
 </tr>
 <tr>
@@ -75,7 +75,7 @@ Example: `42`
 </td>
 <td>
 
-Used to determine `STACK_HOST_SUFFIX`. Useful for GitHub API integrations.
+Used to determine `STACK_HOST_SUFFIX`. Useful for GitHub API integrations. Empty outside review environments, and not overridable: it always matches the review environment rig deploys.
 </td>
 </tr>
 <tr>

@@ -79,11 +79,13 @@ rig exec my-service sh -c 'echo hello from the cluster'
 >
 > `rig exec` connects to the first container on the cluster belonging to the service. If there are replicas the command will _not_ be executed on each one.
 
-If the service has no running task (scaled to zero, last task exited), `rig exec` and `rig debug` will force a service update to respawn one before attaching. If the task lives on a worker node, `rig` resolves the node's IP via `docker node inspect` and tunnels through `ssh://$CLUSTER_SSH_USER@<node-ip>` automatically.
+`rig exec` allocates a TTY only when it runs in a terminal, so it also works from scripts and CI.
+
+If the service has no running task (scaled to zero, last task exited), `rig exec` and `rig debug` will force a service update to respawn one before attaching. If the task lives on a worker node, `rig` resolves the node's IP via `docker node inspect` and tunnels through `ssh://$CLUSTER_SSH_USER@<node-ip>` automatically (`$USER` when `CLUSTER_SSH_USER` is unset).
 
 ## Run a service image standalone
 
-`rig run <service> [args...]` starts a fresh container from the service's resolved image tag, with the current directory bind-mounted at `/project`. Handy for poking at an entrypoint or running a one-off command without going through the swarm:
+`rig run <service> [args...]` starts a fresh container from the service's image -- the tag `rig build` gave it, or the declared `image:` for a service that isn't built -- with the current directory bind-mounted at `/project` and used as the working directory. Handy for poking at an entrypoint or running a one-off command without going through the swarm:
 
 ```sh
 rig run api sh
@@ -98,7 +100,20 @@ rig run worker node scripts/migrate.js
 cd $(rig dir my-app)
 ```
 
-Re-deploying the same stack from a different directory is refused (set `RIG_FORCE_DIR=1` to override) so two clones can't accidentally fight over the same name.
+Re-deploying the same stack from a different directory is refused (set `RIG_FORCE_DIR=1` to override) so two clones can't accidentally fight over the same name. CI mode skips this check, and for a stack deployed from CI the recorded directory is the runner's workspace.
+
+## Rolling back
+
+Every `rig build` that changes a digest moves the lockfile it replaces into `.rig/history/<environment>/`, keeping the last 20. `rig rollback` restores the newest entry; deploy it to apply it:
+
+```sh
+rig rollback          # back one build
+rig deploy
+rig rollback --list   # entries, newest first
+rig rollback --to=2026-09-24T10-12-03-120Z
+```
+
+Rolling back removes the restored entry and everything newer, so rolling back twice goes back two builds, and building again is how you go forward. The history lives in the directory you build in, so in CI (fresh checkout per run) re-running an earlier workflow run is the way back instead.
 
 ## Shared overlay networks
 
@@ -115,10 +130,15 @@ This runs `docker network create --driver overlay --scope swarm --attachable <na
 `rig update` pulls the latest rig, reinstalls the command, then rebuilds and redeploys Caddy from the checkout `rig` was installed from:
 
 ```sh
-rig update
+rig update                              # locally
+CI=true CLUSTER=<name> rig update       # on a cluster's manager
 ```
 
-Run it wherever `DOCKER_HOST` points to roll out a new Caddy build after pulling changes.
+On a cluster, run it with `CI=true` so Caddy keeps its host-mode ports (see [cluster setup](04-cluster-setup.md#deploy-caddy)). A new Caddy build doesn't change Caddy's config; when a rig release changes what `rig caddy init` writes, run `rig caddy init` afterwards. It keeps the routes and everything else on the cluster.
+
+## Governance is a guard rail
+
+CI mode refuses stacks that publish ports, add capabilities or bind-mount host paths, unless the GitHub actor is listed in `RIG_ADMINS`. That keeps well-meaning stacks from stepping on each other. It is not a security boundary: whoever can run a deploy holds a key that can run any Docker command on the manager, and Compose has other ways to reach the host (a named volume with bind `driver_opts`, the `host` network). Only let repositories you trust deploy to a cluster.
 
 ## Storing data on the cluster
 

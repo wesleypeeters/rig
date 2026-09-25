@@ -4,9 +4,9 @@ How Caddy is configured and how routing works under the hood.
 
 ## Architecture
 
-Caddy runs as a dedicated Swarm stack deployed once per cluster. It listens on `:443` (and `:80` for ACME challenges and HTTP->HTTPS upgrades). All configuration is managed through Caddy's admin API at `localhost:2019`.
+Caddy runs as a dedicated Swarm stack deployed once per cluster. It listens on `:443`, and on `:80`, where Caddy's automatic HTTPS answers ACME HTTP challenges and redirects everything else to HTTPS. All configuration is managed through Caddy's admin API at `localhost:2019`.
 
-The admin API is never exposed to the network. The CLI accesses it by running `curl` inside the Caddy container via `docker exec`.
+The admin API is never exposed to the network. The CLI accesses it by running `curl` inside the Caddy container via `docker exec`, so it must talk to the Docker daemon of the node running Caddy.
 
 ## Port range allocation
 
@@ -20,35 +20,35 @@ The alternative -- a shared external overlay -- would require every service to e
 
 The CLI allocates a range of 10 host ports per stack and publishes services on those ports. Caddy reverse proxies to `host:{port}` on the Docker host. Stack files stay clean because services don't know or care about Caddy.
 
-Port space: `49160-65529` on clusters, `45000-49150` on Docker Desktop (avoids ephemeral port conflicts).
+Port space: `49160-65529` on clusters (1637 ranges), `45000-49149` on Docker Desktop and OrbStack (415 ranges; macOS uses `49152-65535` for ephemeral source ports).
 
 Allocation flow:
 
-1. CLI reads claimed port ranges from Caddy's config
-2. CLI finds the next unclaimed range ID
-3. CLI maps each routed service to a port within the range
-4. Services are published on those host ports via `docker stack deploy`
-5. Caddy routes are configured to upstream to `host:{port}`
-6. The range ID is stored in Caddy's config
+1. CLI reads claimed port ranges from Caddy's config and picks the lowest free range ID
+2. CLI claims it by adding `{"@id": <range>}` to `@vars.portRanges`. Caddy rejects a duplicate `@id`, so if a concurrent deploy claimed the same range first, the CLI picks again
+3. CLI maps each routed service to a port within the range, keeping the port a service already had
+4. Caddy routes are configured to upstream to `host:{port}`, and the range ID and port map are stored in the stack's route
+5. Services are published on those host ports via `docker stack deploy`
 
-When a stack is removed, its port range registration is deleted from Caddy so it can be reused.
+A stack keeps its range across redeploys. When it is removed, or no longer has routes, the range is released for reuse.
 
 ## Config structure
 
 ```
-@stacks (server)
-  routes[]
-    handle[0] -> global vars handler (@vars)
-      portRanges[] -> [{ @id: 0 }, { @id: 1 }, ...]
-      requestHost -> {http.request.host}
-      clusterTld -> e.g. .dev.example.com (used to rebuild the public TLS allowlist)
-      privateSubnet -> (optional, set via --private-subnet)
+@stacks (server srv0)
+  routes[0] -> global route
+    handle[0] -> @vars
+      portRanges[]     -> [{ @id: 0 }, { @id: 1 }, ...]
+      requestHost      -> {http.request.host}
+      clusterTld       -> e.g. .dev.example.com (strip regex, public TLS allowlist)
+      privateSubnet    -> optional, --private-subnet
+      extraSubjectsUrl -> optional, --extra-subjects-url
     handle[1] -> strip host header handler
-    {stack_id} -> stack route
-      handle[0] -> vars (portRangeId)
-      handle[1] -> subroute
-        routes[] -> per-hostname reverse proxy rules
-    localhost -> health check
+  localhost -> health check ("rig is running")
+  {stack_id} -> one route per deployed stack
+    handle[0] -> vars (repository, directory, portRangeId, portAssignments)
+    handle[1] -> subroute
+      routes[] -> per-hostname reverse proxy rules
 ```
 
 Per-stack route:
@@ -59,9 +59,10 @@ Per-stack route:
   "handle": [
     {
       "handler": "vars",
-      "portRangeId": 0,
+      "repository": "owner/repo",
       "directory": "/path/to/stack/source",
-      "repository": "owner/repo"
+      "portRangeId": 0,
+      "portAssignments": { "api:3000": 0 }
     },
     {
       "handler": "subroute",
@@ -115,8 +116,9 @@ For review environments, hostnames get a `.r{pr_number}` suffix before the clust
 |---------------|-------------------|
 | `*.localhost` | Caddy internal CA (on-demand) |
 | Custom private TLDs | Caddy internal CA (on-demand) |
-| Public FQDNs | ACME on-demand, scoped to the deployed-host allowlist (see [below](#public-acme-is-scoped-to-the-deployed-host-allowlist)) |
-| Wildcard public domains | ACME DNS-01 (Cloudflare plugin) |
+| Route hostnames under a public cluster TLD | ACME on-demand, scoped to the deployed-host allowlist (see [below](#public-acme-is-scoped-to-the-deployed-host-allowlist)) |
+| Hostnames served as-is (production) | configured by hand: a policy plus `tls.certificates.automate` |
+| Wildcard public domains | configured by hand: ACME DNS-01 through the Cloudflare plugin |
 
 The custom Caddy build includes the Cloudflare DNS plugin and the Cloudflare IP module for trusted proxy headers.
 
@@ -124,13 +126,13 @@ The custom Caddy build includes the Cloudflare DNS plugin and the Cloudflare IP 
 
 Review env hostnames built by rig follow the pattern `<route>.r<pr>.tld`, e.g. `app.r42.example.com`. That's two labels prepended to the registered domain. Public CAs only issue wildcards with one `*` at the leftmost position (CABF baseline), so a single cert can't cover all review envs at once. The options:
 
-- **Single-level wildcard for top-level routes only.** `*.example.com` covers `app.example.com`, `api.example.com`, etc. Combine with per-hostname on-demand for the review env URLs. This is what rig clusters use today.
-- **Pay for Cloudflare Advanced Certificate Manager** ($10/mo per zone). Issues multi-label wildcards outside the standard. Skipped on rig clusters since on-demand works.
+- **Single-level wildcard for top-level routes only.** `*.example.com` covers `app.example.com`, `api.example.com`, etc. Combine with per-hostname on-demand for the review env URLs.
+- **Cloudflare Advanced Certificate Manager** (a paid add-on per zone). Issues multi-label wildcards outside the standard. Unnecessary if on-demand works for you.
 - **Restructure URLs to a single label.** Instead of `app.r42.example.com`, generate `app-r42.example.com`. Then `*.example.com` covers everything. Big change to the rig route scheme.
 
 ### Switch to ZeroSSL to dodge LE rate limits
 
-Let's Encrypt enforces 50 certificates per registered domain per 168h. On a busy review-env cluster the per-hostname on-demand path will hit this within a week. **Configure ZeroSSL as the primary ACME issuer with Let's Encrypt as fallback.** Same DNS-01 challenge path, same Cloudflare provider for the TXT record, much more permissive ACME rate limits.
+Let's Encrypt enforces 50 certificates per registered domain per 168h. On a busy review-env cluster the per-hostname on-demand path will hit this within a week. **Configure ZeroSSL as the primary ACME issuer with Let's Encrypt as fallback.** ZeroSSL's ACME rate limits are much more permissive and count separately from Let's Encrypt's.
 
 ZeroSSL uses External Account Binding (EAB) for ACME. Get credentials once per email:
 
@@ -140,42 +142,38 @@ curl -sS -X POST https://api.zerossl.com/acme/eab-credentials-email \
 # returns eab_kid and eab_hmac_key
 ```
 
-Then configure the issuer with `ca: https://acme.zerossl.com/v2/DV90`, `email`, `external_account.{key_id, mac_key}`, and the DNS-01 challenge config. Add a second plain `acme` issuer in the same policy's `issuers` array to fall back to Let's Encrypt if ZeroSSL fails.
+Then give the `@ondemand-subjects` policy an issuer with `ca: https://acme.zerossl.com/v2/DV90`, `email` and `external_account.{key_id, mac_key}`, plus a second plain `acme` issuer in the same `issuers` array to fall back to Let's Encrypt. rig's default issuer solves HTTP-01 or TLS-ALPN challenges; add a Cloudflare `dns` challenge to both issuers if you prefer DNS-01. `rig caddy init` keeps an `@ondemand-subjects` edited this way (see below).
 
 ### Public ACME is scoped to the deployed-host allowlist
 
 Public certs are issued on-demand, but only for the hostnames rig is actually serving. The `@ondemand-subjects` policy carries an explicit `subjects` allowlist -- and an empty list means "match any SNI" in Caddy, which is the thing to avoid: on a publicly-reachable cluster, scanners spraying random SNIs would each open an ACME order and burn the issuer's rate limit on garbage hostnames.
 
-`syncPublicSubjects` rebuilds that allowlist from the live `@stacks` routes after every deploy and teardown, so it always tracks what's deployed. Route matchers are stored with the cluster TLD stripped, so each one is turned back into its FQDN (`<matcher><clusterTld>`, via `@vars.clusterTld`) before being allowed. A hostname not backed by a deployed route matches nothing and never opens an order.
+`syncPublicSubjects` rebuilds that allowlist from the live `@stacks` routes after every deploy, teardown and `rig caddy init`, so it always tracks what's deployed. Route matchers are stored with the cluster TLD stripped, so each one is turned back into its FQDN (`<matcher><clusterTld>`, via `@vars.clusterTld`) before being allowed. A hostname not backed by a deployed route matches nothing and never opens an order. Wildcard matchers are left out: `*.x` on the list would let any name under it open an order again, so a wildcard route needs a wildcard certificate configured by hand.
 
 - **The sentinel.** `publicAllowlistSentinel` (`_rig-public-allowlist-sentinel.localhost`) keeps the list non-empty when nothing public is deployed, so it can't collapse back to match-all. It sits under `.localhost`, so the internal policy claims it first -- it can't trigger a public order itself.
 - **`automatic_https.disable_certificates` on `@stacks`.** Route matchers are TLD-stripped (`app.r33`, not `app.r33.dev.example.com`) and aren't real public names, so Caddy's managed-cert pass shouldn't try to provision for them. Public certs come from the on-demand allowlist instead.
 - **The permission endpoint stays permissive by design.** It reads back the admin config and answers `200` for everything, but it's only consulted for an SNI that already matched a scoped on-demand policy, so an unknown name never reaches it. Tightening it to a real deny-by-default handler would be belt-and-suspenders.
 
-Clusters initialized before this change need a `rig caddy init` re-run to pick up the scoped policy -- `syncPublicSubjects` is a no-op until `@ondemand-subjects` exists. Pair it with ZeroSSL (above) so the allowlisted issuance also dodges Let's Encrypt's rate limits. Keep `@ondemand-internal-subjects` (covers `*.localhost`) as-is; it uses the internal CA, not a public one.
+`syncPublicSubjects` does nothing on a cluster without an `@ondemand-subjects` policy (`rig caddy init` adds it), and on a cluster whose TLD ends in `host` it keeps the list at just the sentinel, since nothing there is public. Keep `@ondemand-internal-subjects` (covers `*.localhost` and TLDs added with `rig caddy tld`) as-is; it uses the internal CA, not a public one.
 
 ## What `init` owns, and what it leaves alone
 
-`rig caddy init` writes the whole config with one `POST /load`. That is right on an empty cluster and destructive on a live one, because Caddy config is shared with humans: a cluster acquires automation policies for names rig never hears about, DNS-01 issuers rig's defaults don't include, and `@vars` keys set by hand. Re-running init used to replace all of it silently, and nothing said so until certificates stopped renewing.
+`rig caddy init` writes the whole config with one `POST /load`. On an empty cluster that is simply rig's config. On a live one, where the config also holds every deployed stack's routes and whatever people have added by hand, init starts from what is there and replaces only what rig owns:
 
-Two rules now apply, and the difference between them matters:
-
-- **Foreign objects are preserved.** An automation policy whose `@id` rig didn't author is kept, in the position it already occupies -- order is load-bearing, since Caddy takes the first policy whose subjects match. Same for `@vars` keys rig doesn't set.
-- **Rig's own objects that were edited cause a refusal.** Here rig has an opinion and it conflicts with a human's. `init` prints which fields differ and stops. `--force` is how the human wins.
-
-Preserving can't cover the second case: a customised `@ondemand-subjects` is rig's object, so nothing about its identity marks it as somebody's work -- only comparing it to the default reveals that.
-
-Fields rig rewrites at runtime (`subjects`, which `syncPublicSubjects` rebuilds every deploy) are excluded from the comparison. Including them would make every established cluster look edited and train people to pass `--force`, defeating the check.
+- **Everything rig didn't author is kept**: the deployed stack routes, other servers and apps, `tls.certificates` (e.g. an `automate` list), storage, automation policies with an `@id` rig doesn't use (in the position they occupy -- order is load-bearing, since Caddy takes the first policy whose subjects match), and `@vars` keys rig doesn't set.
+- **rig's own settings are kept as they are**: `@vars.portRanges`, and the `subjects` lists that `syncPublicSubjects` and `rig caddy tld` maintain. The TLD, `--private-subnet` and `--extra-subjects-url` keep their live values unless you pass them; pass `--private-subnet=` (empty) to clear one.
+- **rig's own objects that someone edited are kept too, and listed.** A hand-edited `@ondemand-subjects` (say, ZeroSSL issuers) or `on_demand` permission survives a re-init. `--force` replaces them with rig's defaults.
 
 ```
 $ rig caddy init .dev.example.com
-Fatal: This cluster's Caddy config has been edited since it was initialised:
-  - @ondemand-subjects.issuers
-
-Re-initialising would replace those with rig's defaults. On a live cluster that
-can stop certificates renewing.
-Re-run with --force if that is genuinely what you want.
+Keeping 14 deployed routes
+Keeping 1 automation policy rig did not create: @cloudflare
+Keeping hand-edited rig settings (--force replaces them with the defaults): @ondemand-subjects.issuers
+Keeping: tls.certificates
+Caddy initialized with TLD .dev.example.com
 ```
+
+rig's global route, its health route and its log settings are always rewritten: that is how a new rig version rolls out config changes. A default log you scoped with `include` is left alone.
 
 ## Vouching for hostnames a route matcher can't express
 
@@ -183,7 +181,7 @@ Some hosts are per-tenant and served by one route -- `cdn.<customer-domain>` pro
 
 Dropping the `subjects` restriction to fix that is the one thing the allowlist exists to prevent. Instead, set `@vars.extraSubjectsUrl` to an endpoint returning `{"subjects": ["cdn.example.nl", ...]}`; `syncPublicSubjects` merges it into the list it already rebuilds. Entries are filtered to bare hostnames (a wildcard or a path can't reopen match-all through the back door) and capped. Every failure mode -- unreachable, non-2xx, unparseable, wrong shape -- leaves the deploy-derived list unchanged.
 
-Set it at init with `--extra-subjects-url=`, or on an existing cluster **seed it through the admin API rather than re-initialising**: `@vars` is only read during a deploy, so a seeded key survives every subsequent deploy, and only `init` rewrites it.
+Set it with `rig caddy init --extra-subjects-url=<url>`. Later re-inits keep it.
 
 ## Custom build
 
@@ -191,19 +189,9 @@ The `caddy/Dockerfile` builds Caddy with these plugins:
 
 - `caddy-dns/cloudflare` -- DNS-01 ACME challenges for wildcard certs
 - `WeidiDeng/caddy-cloudflare-ip` -- recognizes Cloudflare proxy IPs for `X-Forwarded-For` trust
-- `darkweak/souin/plugins/caddy` + `darkweak/storages/otter/caddy` -- RFC 9111 conditional cache
+- `darkweak/souin/plugins/caddy` + `darkweak/storages/otter/caddy` -- an HTTP cache. `rig caddy init` doesn't configure it; it is built in so that a config which references it still loads.
 
-It also includes `curl` for the admin API client.
-
-## HTTP cache
-
-The Souin cache handler sits in the global handler chain, so every routed request runs through it. Backends opt in by emitting `Cache-Control: public, max-age=N` on responses. Without that header, requests are passed through unchanged (`default_cache_control: "no-store"`). Cached responses are served straight from a 50k-entry in-process Otter store; conditional requests (`If-None-Match`, `If-Modified-Since`) are honored.
-
-Defaults set during `rig caddy init`:
-
-- `ttl: 10s` -- fallback freshness when a backend opts in but doesn't set `max-age`
-- `stale: 1h` -- how long stale entries can be served while revalidating
-- `default_cache_control: no-store` -- nothing is cached unless the backend asks for it
+It also includes `curl` for the admin API client. Caddy and every plugin are pinned, so rebuilding the image (`rig update`) can't change the Caddy version under a running config.
 
 ## How TLD stripping works
 
@@ -220,11 +208,10 @@ This means route keys in `x-rig` should be base hostnames without the TLD. When 
 
 The strip regex is configured during `rig caddy init <tld>`:
 
-| TLD | Strip pattern | `myapp.r42.dev.example.com` becomes |
-|-----|--------------|--------------------------------------|
-| `.localhost` | `\.localhost$` | `myapp.r42` |
-| `.dev.example.com` | `\.[^.]+\.dev\.example\.com$` | `myapp` |
-| `.*host` pattern | `\.\w*host$` | `myapp.r42` |
+| TLD | Strip pattern | Example |
+|-----|---------------|---------|
+| `.dev.example.com` | `(.+)\.dev\.example\.com$` | `myapp.r42.dev.example.com` becomes `myapp.r42` |
+| Any TLD ending in `host` (`.localhost`, `.devhost`) | `(.+)\.\w*host$` | `myapp.r42.localhost` becomes `myapp.r42` |
 
 If you change the cluster TLD, re-run `rig caddy init` with the new value.
 
@@ -234,10 +221,14 @@ Routes with `access: private` are restricted to the VPN subnet configured during
 
 For each private route, two Caddy route entries are created:
 
-1. A route matching both the hostname and `remote_ip` within the configured subnet — proxies normally
-2. A fallback route matching only the hostname — returns `403 Forbidden: VPN required`
+1. A route matching both the hostname and `remote_ip` within the configured subnet -- proxies normally
+2. A fallback route matching only the hostname -- returns `403 Forbidden: VPN required`
 
 This means clients outside the subnet see a 403 instead of the service. If no `--private-subnet` is configured, `access: private` routes are treated like any other route (no IP restriction).
+
+The subnet is written into each route when the stack deploys. After changing it with `rig caddy init --private-subnet=...`, redeploy every stack with private routes.
+
+Routes with `access: none` get a single route that answers `403 Forbidden`, and their target service isn't published.
 
 ## Troubleshooting
 

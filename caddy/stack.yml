@@ -13,12 +13,15 @@ services:
       - config:/config
       - webroot:/srv
     command: ["caddy", "run", "--resume"]
+    environment:
+      # Certificate reloads need headroom; collect before reaching the container cap.
+      GOMEMLIMIT: 768MiB
     deploy:
       resources:
         limits:
-          memory: 256M
+          memory: 1G
         reservations:
-          memory: 128M
+          memory: 256M
 
 volumes:
   data:
